@@ -8,47 +8,53 @@ class DoubleDiffusion(FluidModel2D):
         # Call the FluidModel2D __init__ first
         super().__init__(domain, params)
         
-        # Add the specific salinity field
-        self.sa = self.dist.Field(name='sa', bases=(self.x_basis, self.z_basis))
+        # Add additional fields
+        self.te = self.dist.Field(name='te', bases=self.all_bases)
+        self.sa = self.dist.Field(name='sa', bases=self.all_bases)
+        self.te.change_scales(self.dealias)
         self.sa.change_scales(self.dealias)
-        self.tau_sa = self.dist.Field(name='tau_sa')
-        self.sa_eq = self.dist.Field(name='sa_eq', bases=(self.x_basis, self.z_basis))
-
-        # for bounded domain
         
+        self.te_eq = self.dist.Field(name='te_eq', bases=self.all_bases)
+        self.sa_eq = self.dist.Field(name='sa_eq', bases=self.all_bases)
 
         # Newton solver now sees [u, te, sa]
-        self.state_fields.append(self.sa)
+        self.state_fields.extend([self.te, self.sa])
 
-        self.eq_fields.append(self.sa_eq)
+        self.eq_fields.extend([self.te_eq, self.sa_eq])
 
     def _get_base_namespace(self):
-        ex, ez = self.coords.unit_vector_fields(self.dist)
+        unit_vectors = self.coords.unit_vector_fields(self.dist)
+        if len(unit_vectors) == 2:
+            ex, ez = unit_vectors
+            ey = None # Or a zero-field if needed
+        else:
+            ex, ey, ez = unit_vectors
         ns = {
-            'ez': ez, 'ex': ex,
+            'ex': ex, 'ez': ez, 
             'w': self.u @ ez,
-            # Operators
-            # 'grad': lambda A: de.grad(A),
-            # 'lap': lambda A: de.div(de.grad(A)),
-            # 'trace': lambda A: de.trace(A),
-            # 'integ': lambda A: de.Integrate(A)
         }
+        if ey is not None:
+            ns['ey'] = ey
         ns.update(self.params)
         return ns
     
-    def load_state(self, filename):
-        with h5py.File(filename, mode='r') as file:
-            u_init = np.array(file.get('/u'))
-            w_init = np.array(file.get('/w'))
-            te_init = np.array(file.get('/t'))
-            sa_init = np.array(file.get('/s'))
-        self.set_state(np.concatenate([u_init.ravel(), w_init.ravel(), te_init.ravel(), sa_init.ravel()]))
+    # def load_state(self, filename):
+    #     with h5py.File(filename, mode='r') as file:
+    #         u_init = np.array(file.get('/u'))
+    #         w_init = np.array(file.get('/w'))
+    #         te_init = np.array(file.get('/t'))
+    #         sa_init = np.array(file.get('/s'))
+    #     self.set_state(np.concatenate([u_init.ravel(), w_init.ravel(), te_init.ravel(), sa_init.ravel()]))
 
 class SaltFinger(DoubleDiffusion):
     def get_IVP(self):
         ns = self._get_base_namespace()
+        tau_p = self.dist.Field(name='tau_p')
+        tau_u = self.dist.VectorField(self.coords, name='tau_u')
+        tau_te = self.dist.Field(name='tau_te')
+        tau_sa = self.dist.Field(name='tau_sa')
         vars = [self.p, self.u, self.te, self.sa, 
-                self.tau_p, self.tau_u, self.tau_te, self.tau_sa]
+                tau_p, tau_u, tau_te, tau_sa]
         problem = de.IVP(vars, namespace=ns)
         # Periodic Governing Equations
         problem.add_equation("trace(grad(u)) + tau_p = 0")
@@ -62,10 +68,14 @@ class SaltFinger(DoubleDiffusion):
         return problem
     def get_EVP(self):
         ns = self._get_base_namespace()
+        tau_p = self.dist.Field(name='tau_p')
+        tau_u = self.dist.VectorField(self.coords, name='tau_u')
+        tau_te = self.dist.Field(name='tau_te')
+        tau_sa = self.dist.Field(name='tau_sa')
         ns.update({'u_eq': self.u_eq, 'te_eq': self.te_eq, 'sa_eq': self.sa_eq,
                    'sigma': self.sigma})
         vars = [self.p, self.u, self.te, self.sa, 
-                self.tau_p, self.tau_u, self.tau_te, self.tau_sa]
+                tau_p, tau_u, tau_te, tau_sa]
         # Define EVP
         problem = de.EVP(vars, eigenvalue=self.sigma, namespace=ns)
         # Add equations here based on the linearized physics of salt finger convection
@@ -82,9 +92,13 @@ class SaltFinger(DoubleDiffusion):
 class DiffusiveConvection(DoubleDiffusion):
     def get_IVP(self):
         ns = self._get_base_namespace()
+        tau_p = self.dist.Field(name='tau_p')
+        tau_u = self.dist.VectorField(self.coords, name='tau_u')
+        tau_te = self.dist.Field(name='tau_te')
+        tau_sa = self.dist.Field(name='tau_sa')
         ns.update({'np': np})
         vars = [self.p, self.u, self.te, self.sa, 
-                self.tau_p, self.tau_u, self.tau_te, self.tau_sa]
+                tau_p, tau_u, tau_te, tau_sa]
         problem = de.IVP(vars, namespace=ns)
         # Periodic Governing Equations
         problem.add_equation("trace(grad(u)) + tau_p = 0")

@@ -11,7 +11,7 @@ logging.getLogger('solvers').setLevel(logging.WARNING)
 logging.getLogger('subsystems').setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
-class NewtonSolver:
+class ECSSolver:
     def __init__(self, model, params=None):
         self.model = model
         self.IVP_problem = self.model.get_IVP()  
@@ -25,7 +25,6 @@ class NewtonSolver:
         self.max_iter = params['max_iter'] if params and 'max_iter' in params else 20
         self.Tp = params['Tp'] if params and 'Tp' in params else 0.02
         self.d_tol = params['d_tol'] if params and 'd_tol' in params else 1e-7
-        self.n_timesteps = 10
         self.gmres_min_error = params['gmres_min_error'] if params and 'gmres_min_error' in params else 1e-6
         self.trust_radius_min = params['trust_radius_min'] if params and 'trust_radius_min' in params else 1e-4
         self.trust_radius = params['trust_radius'] if params and 'trust_radius' in params else 1.0
@@ -111,6 +110,8 @@ class NewtonSolver:
         ''' Arnoldi iteration '''
         # Ensure starting vector is orthogonal to neutral direction
         def project_out(v):
+            if np.linalg.norm(x_base) < 1e-6:
+                return v
             dudt_ref = self.model.t_derivative(self.IVP_problem, x_base, self.d_tol) # time-derivative
             dudt_ref = dudt_ref / np.linalg.norm(dudt_ref) # normalization
             dudx_ref = self.model.x_derivative(x_base) # x-derivative
@@ -120,8 +121,8 @@ class NewtonSolver:
             gg = np.vdot(dudt_ref, dudt_ref) # <dudt_ref, dudt_ref>
             gv = np.vdot(dudt_ref, v) # <dudt_ref, v>
             gg1 = np.vdot(dudx_ref, dudx_ref)
-            gg2 = np.vdot(dudz_ref, dudz_ref)
             g1v = np.vdot(dudx_ref, v)
+            gg2 = np.vdot(dudz_ref, dudz_ref)
             g2v = np.vdot(dudz_ref, v)
             return v - dudt_ref * (gv / gg) - dudx_ref * (g1v / gg1) - dudz_ref * (g2v / gg2)
         if self.projectNeutralDrift:
@@ -203,12 +204,18 @@ class NewtonSolver:
             # logger.info(f"Hookstep-based optimal residual norm: {test}, min GMRES residual norm: {min_error}, trust radius: {tr_local}")
         return x_pert + xk, min_error, tr_local
     
-    def solve(self, 
+    def NewtonSolver(self, 
               x0, 
+              Tsearch=False,
+              Rxsearch=False,
+              Rzsearch=False,
               Tp=0.02, 
               ax = 0.0, 
               az = 0.0,
               dt=2e-4):
+        self.Tsearch = Tsearch
+        self.Rxsearch = Rxsearch
+        self.Rzsearch = Rzsearch
         self.model.init_dt = dt
         self.Tp = Tp
         N_ = self.model.size()
@@ -241,8 +248,6 @@ class NewtonSolver:
             norm_b = np.linalg.norm(nonlinear_res)
             logger.info(f"Iteration {i}, ||x||: {np.linalg.norm(x[:N_])}, Residual: {norm_b}, GMRES error: {error}, trust radius: {tr}")
             
-        # else:
-        #     logger.warning("Maximum iterations reached without convergence.")
         return x
     
 

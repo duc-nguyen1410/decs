@@ -1,0 +1,1 @@
+To run: `mpiexec -n 4 python3 simulate.py`
