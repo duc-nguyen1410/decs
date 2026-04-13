@@ -10,7 +10,7 @@ from mpi4py import MPI
 logging.getLogger('solvers').setLevel(logging.WARNING)
 logging.getLogger('subsystems').setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
-
+# from ..physics import Symmetry
 class ECSSolver:
     def __init__(self, model, params=None):
         self.model = model
@@ -36,7 +36,8 @@ class ECSSolver:
         ''' Return sigma(ax, az)*F^Tp(x0) '''
         x = self.model.F_Tp(self.IVP_problem, x0, Tp)
         # symmetry operations on x using ax and az if needed
-        # x = self.model.apply_symmetry(x, ax, az)
+        # sigma = Symmetry(ax=ax, az=az)
+        x = self.model.apply_symmetry(x, ax=ax, az=az)
         return x
     def DG(self, x_base, x_perturb, phi_base, Tp, ax, az):
         ''' Return (F^Tp(x0+dx) - F^Tp(x0)) / ||dx|| '''

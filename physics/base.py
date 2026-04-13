@@ -344,3 +344,43 @@ class FluidModel2D:
             data_slices.append(gdata.ravel())
         return np.concatenate(data_slices)
     
+    def apply_symmetry_ax(self, field, ax):
+        kx = self.x_basis.wavenumbers
+        phase_shift = np.exp(1j * kx * ax)
+        coeff = field.allgather_data('c')
+        view = [np.newaxis] * coeff.ndim
+        view[1] = slice(None) # Match the X-axis
+        coeff *= phase_shift[tuple(view)]
+        field.load_from_global_coeff_data(coeff)
+    def apply_symmetry_ay(self, field, ay):
+        if self.dim < 3:
+            return # Do nothing if 2D
+        ky = self.y_basis.wavenumbers
+        phase_shift = np.exp(1j * ky * ay)
+        coeff = field.allgather_data('c')
+        # In 3D (comp, x, y, z), y is axis 2
+        view = [np.newaxis] * coeff.ndim
+        view[2] = slice(None) 
+        coeff *= phase_shift[tuple(view)]
+        field.load_from_global_coeff_data(coeff)
+
+    def apply_symmetry_az(self, field, az):
+        """Applies a translation in the z-direction (Fourier only)."""
+        if self.bounded:
+            raise NotImplementedError("Cannot use phase-shift for bounded (Chebyshev) z-basis.")
+        kz = self.z_basis.wavenumbers
+        phase_shift = np.exp(1j * kz * az)
+        coeff = field.allgather_data('c')
+        # In 2D (comp, x, z), z is axis 2. In 3D (comp, x, y, z), z is axis 3.
+        view = [np.newaxis] * coeff.ndim
+        view[-1] = slice(None) # z is always the last axis
+        coeff *= phase_shift[tuple(view)]
+        field.load_from_global_coeff_data(coeff)
+    def apply_symmetry(self, x, ax=0, az=0):
+        self.set_state(x)
+        for field in self.state_fields:
+            if ax != 0:
+                self.apply_symmetry_ax(field, ax)
+            if az != 0 and not self.bounded: # Only if z is Fourier!
+                self.apply_symmetry_az(field, az)
+        return self.get_state()
