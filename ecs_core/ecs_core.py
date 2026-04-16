@@ -14,7 +14,6 @@ logger = logging.getLogger(__name__)
 class ECSSolver:
     def __init__(self, model, params=None):
         self.model = model
-        self.IVP_problem = self.model.get_IVP()  
         #
         self.Tsearch = params['Tsearch'] if params and 'Tsearch' in params else False
         self.Rxsearch = params['Rxsearch'] if params and 'Rxsearch' in params else False
@@ -24,22 +23,27 @@ class ECSSolver:
         self.tol = params['tol'] if params and 'tol' in params else 1e-8
         self.max_iter = params['max_iter'] if params and 'max_iter' in params else 20
         self.Tp = params['Tp'] if params and 'Tp' in params else 0.02
+        #
         self.d_tol = params['d_tol'] if params and 'd_tol' in params else 1e-7
-        self.gmres_min_error = params['gmres_min_error'] if params and 'gmres_min_error' in params else 1e-6
+        self.gmres_min_error = params['gmres_min_error'] if params and 'gmres_min_error' in params else 1e-3
         self.trust_radius_min = params['trust_radius_min'] if params and 'trust_radius_min' in params else 1e-4
         self.trust_radius = params['trust_radius'] if params and 'trust_radius' in params else 1.0
+        #
         self.krylov_dim = params['krylov_dim'] if params and 'krylov_dim' in params else 50
         self.krylov_dim_min = params['krylov_dim_min'] if params and 'krylov_dim_min' in params else 20
-        self.projectNeutralDrift = True
-        self.Ne = 50
-    def G(self, x0, Tp, ax, az):
+        # stability
+        self.projectNeutralDrift = params['projectNeutralDrift'] if params and 'projectNeutralDrift' in params else True
+        self.computeStability = params['computeStability'] if params and 'computeStability' in params else False
+        self.Neigen = params['Neigen'] if params and 'Neigen' in params else 50
+
+    def G(self, x0, Tp, ax=0, az=0):
         ''' Return sigma(ax, az)*F^Tp(x0) '''
-        x = self.model.F_Tp(self.IVP_problem, x0, Tp)
+        x = self.model.F_Tp(x0, Tp)
         # symmetry operations on x using ax and az if needed
         # sigma = Symmetry(ax=ax, az=az)
         x = self.model.apply_symmetry(x, ax=ax, az=az)
         return x
-    def DG(self, x_base, x_perturb, phi_base, Tp, ax, az):
+    def DG(self, x_base, x_perturb, phi_base, Tp, ax=0, az=0):
         ''' Return (F^Tp(x0+dx) - F^Tp(x0)) / ||dx|| '''
         norm_v = np.linalg.norm(x_perturb)
         if norm_v == 0:
@@ -54,7 +58,7 @@ class ECSSolver:
         array_out = (array_final-phi_base)/epsilon
         # logger.info(f"DG output computed, ||DG||: {np.linalg.norm(array_out)}")
         return array_out
-    def LinearOperator(self, x, x_perturb, phi_base):
+    def LinearOperator(self, xi, xi_perturb, phi_base):
         ''' Linearized operator for the Newton iteration 
             (F^T(x0+dx) - F^T(x0)) / ||dx|| - dx
         '''
@@ -62,43 +66,46 @@ class ECSSolver:
         
         T_temp, ax_temp, az_temp = self.Tp, 0.0, 0.0
         if self.Tsearch:
-            T_temp = x[N_+self.Tsearch-1]
-            delta_T = x_perturb[N_+self.Tsearch-1]
+            T_temp = xi[N_+self.Tsearch-1]
+            delta_T = xi_perturb[N_+self.Tsearch-1]
         if self.Rxsearch:
-            ax_temp = x[N_+self.Tsearch+self.Rxsearch-1]
-            delta_ax = x_perturb[N_+self.Tsearch+self.Rxsearch-1]
+            ax_temp = xi[N_+self.Tsearch+self.Rxsearch-1]
+            delta_ax = xi_perturb[N_+self.Tsearch+self.Rxsearch-1]
         if self.Rzsearch:
-            az_temp = x[N_+self.Tsearch+self.Rxsearch+self.Rzsearch-1]
-            delta_az = x_perturb[N_+self.Tsearch+self.Rxsearch+self.Rzsearch-1]
+            az_temp = xi[N_+self.Tsearch+self.Rxsearch+self.Rzsearch-1]
+            delta_az = xi_perturb[N_+self.Tsearch+self.Rxsearch+self.Rzsearch-1]
 
         
-        x_base = np.copy(x[:N_])
-        delta_x = np.copy(x_perturb[:N_])
+        x_base = np.copy(xi[:N_])
+        delta_x = np.copy(xi_perturb[:N_])
 
-        array_out = np.zeros_like(x)
+        array_out = np.zeros_like(xi)
         array_out[:N_] = self.DG(x_base, delta_x, phi_base, T_temp, ax_temp, az_temp) - delta_x
         # logger.info(f"Linear operator applied, ||DG||: {np.linalg.norm(array_out[:N_])}, ||delta_x||: {np.linalg.norm(delta_x)}")
-        if self.Tsearch:
-            array_out[:N_] += self.model.t_derivative(phi_base) * delta_T
-            array_out[N_+self.Tsearch-1] = np.matmul(np.conj(self.model.t_derivative(x_base)), delta_x)
-        if self.Rxsearch:
+        
+        if self.Tsearch: # Sensitivity to T + Phase Condition for T
+            array_out[:N_] += self.model.t_derivative(phi_base, self.d_tol) * delta_T
+            array_out[N_+self.Tsearch-1] = np.matmul(np.conj(self.model.t_derivative(x_base, self.d_tol)), delta_x)
+        if self.Rxsearch: # Sensitivity to shift + Phase Condition (fixing the wave in x)
             array_out[:N_] += self.model.x_derivative(phi_base) * delta_ax
             array_out[N_+self.Tsearch+self.Rxsearch-1] = np.matmul(np.conj(self.model.x_derivative(x_base)), delta_x)
-        if self.Rzsearch:
+        if self.Rzsearch: # Sensitivity to shift + Phase Condition (fixing the wave in z)
             array_out[:N_] += self.model.z_derivative(phi_base) * delta_az
             array_out[N_+self.Tsearch+self.Rxsearch+self.Rzsearch-1] = np.matmul(np.conj(self.model.z_derivative(x_base)), delta_x)
         return array_out
-    def NonlinearOperator(self, x):
+    def NonlinearOperator(self, xi):
         ''' Return sigma*F(x) - x '''
         N_ = self.model.size()
-        state = x[:N_]
-        T_temp = x[N_+self.Tsearch-1] if self.Tsearch else self.Tp
-        ax_temp = x[N_+self.Tsearch+self.Rxsearch-1] if self.Rxsearch else 0.0
-        az_temp = x[N_+self.Tsearch+self.Rxsearch+self.Rzsearch-1] if self.Rzsearch else 0.0
+        xi_out = np.zeros_like(xi)
+        state = xi[:N_]
+        T_temp = xi[N_+self.Tsearch-1] if self.Tsearch else self.Tp
+        ax_temp = xi[N_+self.Tsearch+self.Rxsearch-1] if self.Rxsearch else 0.0
+        az_temp = xi[N_+self.Tsearch+self.Rxsearch+self.Rzsearch-1] if self.Rzsearch else 0.0
         F_state = self.G(state, T_temp, ax_temp, az_temp)
-        return (- F_state + state)  # Residual for the state variables
-    def arnoldi_iteration_inner(self, x_base, Q, phi_base, k:int):
-        Qk = self.LinearOperator(x_base, Q[:, k - 1], phi_base)
+        xi_out[:N_] = - F_state + state
+        return xi_out  # Residual for the state variables
+    def arnoldi_iteration_inner(self, xi_base, Q, phi_base, k:int):
+        Qk = self.LinearOperator(xi_base, Q[:, k - 1], phi_base)
         # logger.info(f"Arnoldi iteration {k}, ||Qk|| before orthogonalization: {np.linalg.norm(Qk)}")
         Hk = np.zeros(k+1)
         for j in range(0, k):
@@ -113,19 +120,27 @@ class ECSSolver:
         def project_out(v):
             if np.linalg.norm(x_base) < 1e-6:
                 return v
-            dudt_ref = self.model.t_derivative(self.IVP_problem, x_base, self.d_tol) # time-derivative
-            dudt_ref = dudt_ref / np.linalg.norm(dudt_ref) # normalization
+            projected_v = v
+            
             dudx_ref = self.model.x_derivative(x_base) # x-derivative
             dudx_ref = dudx_ref / np.linalg.norm(dudx_ref) # normalization
-            dudz_ref = self.model.z_derivative(x_base) # z-derivative
-            dudz_ref = dudz_ref / np.linalg.norm(dudz_ref) # normalization
-            gg = np.vdot(dudt_ref, dudt_ref) # <dudt_ref, dudt_ref>
-            gv = np.vdot(dudt_ref, v) # <dudt_ref, v>
             gg1 = np.vdot(dudx_ref, dudx_ref)
             g1v = np.vdot(dudx_ref, v)
-            gg2 = np.vdot(dudz_ref, dudz_ref)
-            g2v = np.vdot(dudz_ref, v)
-            return v - dudt_ref * (gv / gg) - dudx_ref * (g1v / gg1) - dudz_ref * (g2v / gg2)
+            projected_v -= dudx_ref * (g1v / gg1)
+            if not self.model.bounded:
+                dudz_ref = self.model.z_derivative(x_base) # z-derivative
+                dudz_ref = dudz_ref / np.linalg.norm(dudz_ref) # normalization
+                gg2 = np.vdot(dudz_ref, dudz_ref)
+                g2v = np.vdot(dudz_ref, v)
+                projected_v -= dudz_ref * (g2v / gg2)
+            if self.Tsearch:
+                dudt_ref = self.model.t_derivative(x_base, self.d_tol) # time-derivative
+                dudt_ref = dudt_ref / np.linalg.norm(dudt_ref) # normalization
+                gg = np.vdot(dudt_ref, dudt_ref) # <dudt_ref, dudt_ref>
+                gv = np.vdot(dudt_ref, v) # <dudt_ref, v>
+                projected_v -= dudt_ref * (gv / gg)
+            return projected_v
+        
         if self.projectNeutralDrift:
             r = project_out(r)
         Q = np.zeros((r.size, n+1))
@@ -162,25 +177,25 @@ class ECSSolver:
         res = scipy.optimize.minimize(fun, w_init, args=(H_[0:k_+1,0:k_]), method='SLSQP', jac = Jacobian,
             constraints=(ineq_cons), options={'ftol': 1e-34, 'disp': False, 'maxiter': 100000000}, bounds=None)
         return res
-    def GMRES(self, x_base, x_pert, phi_base, b, kmax, tr):
-        xk = np.copy(x_pert)
-        # logger.info("Starting GMRES ...")
+    def GMRES(self, xi_base, xi_pert, phi_base, b, kmax, tr):
+        xk = np.copy(xi_pert)
+        logger.info("Starting GMRES ...")
         # logger.info(f"Initial perturbation norm: {np.linalg.norm(x_pert)}, Initial residual norm: {np.linalg.norm(b)}")
-        r = self.LinearOperator(x_base, x_pert, phi_base) - b
+        r = self.LinearOperator(xi_base, xi_pert, phi_base) - b
         rho = np.linalg.norm(r)
         beta = rho
         b_norm = np.linalg.norm(b)
         # logger.info(f"Initial GMRES residual norm: {rho}, ||b||: {b_norm}")
-        Q = np.zeros((x_pert.size, kmax+1))
+        Q = np.zeros((xi_pert.size, kmax+1))
         H = np.zeros((kmax+1, kmax))
         
         min_error = np.inf
-        min_vector = np.zeros(x_pert.size)
+        min_vector = np.zeros(xi_pert.size)
         
         Q[:,0] = r/np.linalg.norm(r)
         best_k = 1
         for k in range(1, kmax):
-            Q[:,k], H[:k+1,k-1] = self.arnoldi_iteration_inner(x_base, Q[:,0:k], phi_base, k)
+            Q[:,k], H[:k+1,k-1] = self.arnoldi_iteration_inner(xi_base, Q[:,0:k], phi_base, k)
             # logger.info(f"Q[:,{k}] norm: {np.linalg.norm(Q[:,k])}, H[:{k+1},{k-1}] norm: {np.linalg.norm(H[:k+1,k-1])}")
             res = self.Hookstep(H, beta, k, tr)
             rho = np.linalg.norm(res.fun)
@@ -193,65 +208,53 @@ class ECSSolver:
             best_k = k
             if self.krylov_dim_min <= k and rho < self.gmres_min_error:
                 break
-        test = np.linalg.norm(self.NonlinearOperator(np.copy(x_base)+x_pert+xk))
+        test = np.linalg.norm(self.NonlinearOperator(np.copy(xi_base)+xi_pert+xk))
         # logger.info(f"Initial optimal residual norm: {test}, min GMRES residual norm: {min_error}")
         tr_local = tr
         while test > 0.99*b_norm and tr_local > self.trust_radius_min:
             res = self.Hookstep(H, beta, best_k, tr_local)
             xk = np.matmul(Q[:,0:(best_k)], res.x)
             min_error = np.linalg.norm(res.fun)
-            test = np.linalg.norm(self.NonlinearOperator(np.copy(x_base)+x_pert+xk))
+            test = np.linalg.norm(self.NonlinearOperator(np.copy(xi_base)+xi_pert+xk))
             tr_local = 0.5*tr_local
             # logger.info(f"Hookstep-based optimal residual norm: {test}, min GMRES residual norm: {min_error}, trust radius: {tr_local}")
-        return x_pert + xk, min_error, tr_local
-    
-    def NewtonSolver(self, 
-              x0, 
-              Tsearch=False,
-              Rxsearch=False,
-              Rzsearch=False,
-              Tp=0.02, 
-              ax = 0.0, 
-              az = 0.0,
-              dt=2e-4):
-        self.Tsearch = Tsearch
-        self.Rxsearch = Rxsearch
-        self.Rzsearch = Rzsearch
-        self.model.init_dt = dt
-        self.Tp = Tp
+        return xi_pert + xk, min_error, tr_local
+    def save_flow_properties(self, xi, filename="flow_properties.csv"):
+        properties = self.model.get_flow_properties()
         N_ = self.model.size()
-        logger.info("Starting Newton solver ...")
-        x = np.concatenate([x0, 
-                            [Tp] if self.Tsearch else [], 
-                            [ax] if self.Rxsearch else [], 
-                            [az] if self.Rzsearch else []])  # Initial guess includes state and parameters
-        x_pert = np.zeros_like(x)
-        
-        for i in range(self.max_iter):
-            self.model.set_state(x[:N_])
-            self.model.preview()
-            nonlinear_res = self.NonlinearOperator(x)
-            norm_b = np.linalg.norm(nonlinear_res)
-            # logger.info(f"Iteration {i}, Residual norm: {norm_b}, Tp: {x[N_+self.Tsearch-1] if self.Tsearch else Tp}, ax: {x[N_+self.Tsearch+self.Rxsearch-1] if self.Rxsearch else ax}, az: {x[N_+self.Tsearch+self.Rxsearch+self.Rzsearch-1] if self.Rzsearch else az}")
-            if norm_b < self.tol:
-                logger.info("Convergence achieved!")
-                # save the solution to an h5 file
-                self.model.set_state(x[:N_])
-                self.model.save_state(self.odir + 'solution.h5')
-                break
-            T_temp = x[N_+self.Tsearch-1] if self.Tsearch else self.Tp
-            ax_temp = x[N_+self.Tsearch+self.Rxsearch-1] if self.Rxsearch else 0.0
-            az_temp = x[N_+self.Tsearch+self.Rxsearch+self.Rzsearch-1] if self.Rzsearch else 0.0
-            phi_base = self.G(x[:N_], T_temp, ax_temp, az_temp)
-            dx, error, tr = self.GMRES(x, x_pert, phi_base, nonlinear_res, self.krylov_dim, self.trust_radius)
-            x += dx # Update the solution
-            nonlinear_res = self.NonlinearOperator(x)
-            norm_b = np.linalg.norm(nonlinear_res)
-            logger.info(f"Iteration {i}, ||x||: {np.linalg.norm(x[:N_])}, Residual: {norm_b}, GMRES error: {error}, trust radius: {tr}")
+        # debug_x = self.model.get_state()
+        # logger.info(f"||x||: {np.linalg.norm(debug_x)}")
+        if self.model.dist.comm.rank == 0:
+            file_path = os.path.join(self.odir, filename)
+            file_exists = os.path.isfile(file_path)
+            keys = list(properties.keys())
+            if not file_exists:
+                with open(file_path, mode='w') as header:
+                    # Write header if file is new
+                    header_line = ""
+                    if self.Tsearch:
+                        header_line = header_line + f"Tp, "
+                    if self.Rxsearch:
+                        header_line = header_line + f"ax, "
+                    if self.Rzsearch:
+                        header_line = header_line + f"az, "
+                    header_line = header_line + ", ".join(keys)
+                    header.write(header_line + "\n")
+            with open(file_path, mode='a') as f:
+                # Append data
+                values = []
+                if self.Tsearch:
+                    values = values + [f"{xi[N_+self.Tsearch-1]:.12f}"]
+                if self.Rxsearch:
+                    values = values + [f"{xi[N_+self.Tsearch+self.Rxsearch-1]:.12f}"]
+                if self.Rzsearch:
+                    values = values + [f"{xi[N_+self.Tsearch+self.Rxsearch+self.Rzsearch-1]:.12f}"]
+                values = values + [f"{float(properties[k]):.12f}" for k in keys]
+                f.write(", ".join(values) + "\n")
             
-        return x
-    
-
+            # Also print to terminal for real-time monitoring
+            prop_strings = [f"{k}={float(properties[k]):.12f}" for k in keys]
+            logger.info(f"Prop Check: {' | '.join(prop_strings)}")
     def stability(self,x):
         nonlinear_res = self.NonlinearOperator(x)
         norm_b = np.linalg.norm(nonlinear_res)
@@ -259,7 +262,7 @@ class ECSSolver:
             logger.info('Solving linear stability problem around converged solution ...')
             if self.model.dist.comm.rank == 0:
                 if not os.path.exists(self.odir+'stability/'):
-                        os.mkdir(self.odir+'stability/')
+                    os.mkdir(self.odir+'stability/')
 
             N_ = self.model.size()
             T_temp = x[N_+self.Tsearch-1] if self.Tsearch else self.Tp
@@ -268,7 +271,7 @@ class ECSSolver:
             
             phi_base = self.G(x[:N_], T_temp, ax_temp, az_temp)
             # Floquet method
-            Q, H_ = self.arnoldi_iteration(x[:N_], phi_base, T_temp, ax_temp, az_temp, np.random.rand(N_), self.Ne) # <-- Ne iterations
+            Q, H_ = self.arnoldi_iteration(x[:N_], phi_base, T_temp, ax_temp, az_temp, np.random.rand(N_), self.Neigen) # <-- Ne iterations
             H = H_[0:-1,:]
             # get eigenvalue and eigenvector results, these are Floquet multipliers
             eigenvalues, eigenvectors_ = scipy.linalg.eig(H) 
@@ -313,3 +316,66 @@ class ECSSolver:
                 h5f.create_dataset('/xg', data = xg) 
                 h5f.create_dataset('/zg', data = zg) 
                 h5f.close()
+    def NewtonSolver(self, 
+                    x0, 
+                    Tsearch=False,
+                    Rxsearch=False,
+                    Rzsearch=False,
+                    Tp=0.02, 
+                    ax = 0.0, 
+                    az = 0.0,
+                    dt=2e-4):
+        self.Tsearch = Tsearch
+        self.Rxsearch = Rxsearch
+        self.Rzsearch = Rzsearch
+        self.model.init_dt = dt
+        self.Tp = Tp
+        N_ = self.model.size()
+        if self.model.dist.comm.rank == 0:
+            if not os.path.exists(self.odir):
+                os.mkdir(self.odir)
+        logger.info("Starting Newton solver ...")
+        # Initial guess includes state and parameters
+        xi = np.concatenate([x0, 
+                            [Tp] if self.Tsearch else [], 
+                            [ax] if self.Rxsearch else [], 
+                            [az] if self.Rzsearch else []])  
+        xi_pert = np.zeros_like(xi)
+        success = False
+        for i in range(self.max_iter):
+            logger.info("\n")
+            self.model.set_state(xi[:N_])
+            self.model.preview()
+            nonlinear_res = self.NonlinearOperator(xi)
+            norm_b = np.linalg.norm(nonlinear_res)
+            self.save_flow_properties(xi)
+            if i==0:
+                logger.info(f"Iteration {i}, Residual norm: {norm_b}, Tp: {xi[N_+self.Tsearch-1] if self.Tsearch else Tp}, ax: {xi[N_+self.Tsearch+self.Rxsearch-1] if self.Rxsearch else ax}, az: {xi[N_+self.Tsearch+self.Rxsearch+self.Rzsearch-1] if self.Rzsearch else az}")
+            if norm_b < self.tol:
+                logger.info("Convergence achieved!")
+                success = True
+                # save the solution to an h5 file
+                self.model.set_state(xi[:N_])
+                self.model.save_state(self.odir + 'solution.h5')
+                # save time-dependent data
+                if self.Tsearch or self.Rxsearch or self.Rzsearch:
+                    self.model.save_time_dependent_solution()
+                # compute stability
+                if self.computeStability:
+                    self.stability(xi)
+                break
+            
+            T_temp = xi[N_+self.Tsearch-1] if self.Tsearch else self.Tp
+            ax_temp = xi[N_+self.Tsearch+self.Rxsearch-1] if self.Rxsearch else 0.0
+            az_temp = xi[N_+self.Tsearch+self.Rxsearch+self.Rzsearch-1] if self.Rzsearch else 0.0
+            phi_base = self.G(xi[:N_], T_temp, ax_temp, az_temp)
+            dxi, error, tr = self.GMRES(xi, xi_pert, phi_base, nonlinear_res, self.krylov_dim, self.trust_radius)
+            xi += dxi # Update the solution
+            nonlinear_res = self.NonlinearOperator(xi)
+            norm_b = np.linalg.norm(nonlinear_res)
+            logger.info(f"Iteration {i}, ||x||: {np.linalg.norm(xi[:N_])}, Residual: {norm_b}, GMRES error: {error}, trust radius: {tr}")
+            
+        return xi, success, norm_b, np.linalg.norm(xi[:N_]), self.model.get_flow_properties()
+    
+
+    

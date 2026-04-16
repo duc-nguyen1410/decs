@@ -8,25 +8,17 @@ from physics.double_diffusion import SaltFinger, DiffusiveConvection
 
 sizes = (32, 32, 32)
 bounds = (0.5, 0.5, 1.0)
-domain = SaltFinger.create_domain(sizes, bounds)
-
 params = {'Ra': 1e5, 'Pr': 7.0, 'tau': 0.01, 'Rrho': 2.0}
-model = SaltFinger(domain, params)
+model = SaltFinger(params=params, sizes=sizes, bounds=bounds)
+model.build_evp_problem()
 
-evp_problem = model.get_EVP()
-solver = evp_problem.build_solver()
-# SFC.load_eq_state('Base.h5')
-# SFC.load_eq_state('CI1_Lx0.6.h5')
-# print("loaded state")
-print("total size", model.size())
 x0 = model.get_state()
-model.save_state('test_save_state.h5')
-model.load_state('test_save_state.h5')
-evals, emodes = model.solve_EVP(evp_problem, x0, N=20, target=5)
 
-print("Eigenvalues:")
+evals, emodes = model.solve_EVP(x0, N=20, target=5)
+
+logger.info("Eigenvalues:")
 for i, eval in enumerate(evals):
-    print(f"{i}: {eval}")
+    logger.info(f"{i}: {eval}")
 model.save_state('leading_evp.h5')
-# # solver.set_state(0, solver.subsystems[0])
-model.show_state()
+# model.show_state()
+model.preview3D()

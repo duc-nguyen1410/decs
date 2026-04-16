@@ -2,33 +2,38 @@ import numpy as np
 import dedalus.public as de
 import h5py
 import matplotlib.pyplot as plt
-class FluidModel2D:
-    def __init__(self, domain, params):
-        self.dim = domain['dim']
-        self.coords = domain['coords']
-        self.dist = domain['dist']
-        self.x_basis = domain['x_basis']
-        self.y_basis = domain['y_basis']
-        self.z_basis = domain['z_basis']
-        self.all_bases = domain['all_bases']
-        self.dealias = domain['dealias']
+import logging
+logger = logging.getLogger(__name__)
+class FluidModel:
+    def __init__(self, params, sizes, bounds, bounded=False, dealias=3/2):
+        """
+        :param float sizes: Grid mesh of domain (Nx, Nz) or (Nx, Ny, Nz)
+        :param float bounds: Domain size (Lx, Lz) or (Lx, Ly, Lz)
+        :param bool bounded: Is this a domain bounded in vertical (z) direction? If yes, it requires Chebyshev grid
+        :param float dealias: Grid will be scaled for enhancing convective term
+        """
         self.params = params
+        self.sizes = sizes
+        self.bounds = bounds
+        self.dim = len(sizes)
+        self.bounded = bounded
+        self.dealias = dealias
+        self.coords = None
+        self.dist = None
+        self.x_basis = None
+        self.y_basis = None
+        self.z_basis = None
+        self.all_bases = None
+        self.create_domain()
         self.init_dt = 2e-4
 
-        # Core fields: Velocity, Pressure, Temperature
-        self.u = self.dist.VectorField(self.coords, name='u', bases=self.all_bases)
-        self.p = self.dist.Field(name='p', bases=self.all_bases)
-        self.u.change_scales(self.dealias)
-        
-        # Registry: Newton solver sees [u]
-        self.state_fields = [self.u]
-
+        # Registry: Newton solver will see [u, ...]
+        self.state_fields = []
+        self.ivp_problem = None
         # For EVP
-        self.sigma = self.dist.Field(name='sigma') # eigenvalues
-        self.u_eq = self.dist.VectorField(self.coords, name='u_eq', bases=self.all_bases)
+        self.eq_fields = []
+        self.evp_problem = None
         
-        self.eq_fields = [self.u_eq]
-
         # CFL function
         self.CFL = None
 
@@ -37,66 +42,99 @@ class FluidModel2D:
         self.preview_ax = None
         self.preview_im = None
 
-    @staticmethod
-    def create_domain(sizes, bounds, bounded=False, dealias=3/2):
+    # @staticmethod
+    def create_domain(self):
         """
-        Creates a 2D or 3D domain based on input tuple lengths.
+        Creates a 2D or 3D domain/bases in the model.
 
-        sizes: (Nx, Nz) or (Nx, Ny, Nz)
-        bounds: (Lx, Lz) or (Lx, Ly, Lz)
         """
-        dim = len(sizes)
-        if dim == 2:
-            Nx, Nz = sizes
-            Lx, Lz = bounds
-            coords = de.CartesianCoordinates('x', 'z')
-        elif dim == 3:
-            Nx, Ny, Nz = sizes
-            Lx, Ly, Lz = bounds
-            coords = de.CartesianCoordinates('x', 'y', 'z')
+        
+        if self.dim == 2:
+            Nx, Nz = self.sizes
+            Lx, Lz = self.bounds
+            self.coords = de.CartesianCoordinates('x', 'z')
+        elif self.dim == 3:
+            Nx, Ny, Nz = self.sizes
+            Lx, Ly, Lz = self.bounds
+            self.coords = de.CartesianCoordinates('x', 'y', 'z')
         else:
             raise ValueError("Sizes and bounds must be length 2 or 3.")
         
-        dist = de.Distributor(coords, dtype=np.complex128)
+        self.dist = de.Distributor(self.coords, dtype=np.complex128)
 
         # Horizontal x-basis (Always periodic)
-        x_basis = de.ComplexFourier(coords['x'], size=Nx, bounds=(0, Lx), dealias=dealias)
+        self.x_basis = de.ComplexFourier(self.coords['x'], size=Nx, bounds=(0, Lx), dealias=self.dealias)
         
         # Only if 3D, Always periodic
-        if dim == 3:
-            y_basis = de.ComplexFourier(coords['y'], size=Ny, bounds=(0, Ly), dealias=dealias)
+        if self.dim == 3:
+            self.y_basis = de.ComplexFourier(self.coords['y'], size=Ny, bounds=(0, Ly), dealias=self.dealias)
 
-        if bounded:
+        if self.bounded:
             # Use Chebyshev for bounded domains
-            # Centering at 0 (-Lz/2, Lz/2) is standard for many cases with a shear
-            z_basis = de.ChebyshevT(coords['z'], size=Nz, bounds=(-Lz/2, Lz/2), dealias=dealias)
+            self.z_basis = de.ChebyshevT(self.coords['z'], size=Nz, bounds=(0, Lz), dealias=self.dealias)
         else:
             # Use Fourier for fully periodic domains
-            z_basis = de.ComplexFourier(coords['z'], size=Nz, bounds=(0, Lz), dealias=dealias)
+            self.z_basis = de.ComplexFourier(self.coords['z'], size=Nz, bounds=(0, Lz), dealias=self.dealias)
         
-        if dim == 2:
-            all_bases = (x_basis, z_basis)
+        if self.dim == 2:
+            self.all_bases = (self.x_basis, self.z_basis)
         else:
-            all_bases = (x_basis, y_basis, z_basis)
+            self.all_bases = (self.x_basis, self.y_basis, self.z_basis)
         
-        return {
-            'dim': dim,
-            'coords': coords, 
-            'dist': dist, 
-            'x_basis': x_basis,
-            'y_basis': y_basis if dim == 3 else None, 
-            'z_basis': z_basis, 
-            'all_bases': all_bases,  # Merged for easy field creation
-            'dealias': dealias,
-            'bounded': bounded,
-        }
+    
+    def set_param(self, name, value):
+        """Update a parameter and return True if a domain rebuild is needed."""
+        setattr(self, name, value)
+        self.params[name] = value
+        if name in self.params:
+            self.params[name] = value 
+            logger.info(f"{name} was updated to {self.params[name]}")
+        else:
+            logger.info(f"mu_name={name} is unkbown")
+        
+        rebuild_domain = False
+        # Check if we modified geometry
+        if name == 'Lx':
+            rebuild_domain = True
+            # If 2D (Lx, Lz), recreate the tuple with the new Lx
+            if len(self.bounds) == 2:
+                self.bounds = (value, self.bounds[1])
+            # If 3D (Lx, Ly, Lz)
+            elif len(self.bounds) == 3:
+                self.bounds = (value, self.bounds[1], self.bounds[2])
+
+        elif name == 'Ly' and len(self.bounds) == 3:
+            rebuild_domain = True
+            self.bounds = (self.bounds[0], value, self.bounds[2])
+            return True
+
+        elif name == 'Lz':
+            rebuild_domain = True
+            if len(self.bounds) == 2:
+                self.bounds = (self.bounds[0], value)
+            elif len(self.bounds) == 3:
+                self.bounds = (self.bounds[0], self.bounds[1], value)
+        
+        if rebuild_domain:
+            # Re-setup the domain/bases in the model
+            self.create_domain() # Or your specific domain setup function
+            # Re-initialize the Dedalus Problem with the new fields/bases
+            self.rebuild_fields()
+
+        self.build_ivp_problem()
+        self.build_evp_problem()
     
     def get_grid_shape(self):
-        # Returns (Nx, Nz) or (Nx, Ny, Nz) based on the current domain
+        """
+        Returns (Nx, Nz) or (Nx, Ny, Nz) scaled by dealias of current domain
+        """
         return tuple(basis.global_grid(self.dist, scale=self.dealias).shape[i] 
                  for i, basis in enumerate(self.all_bases))
     
     def size(self):
+        """
+        Return total freedom elements on dealias-scaled grid data of all fields 
+        """
         grid_shape = self.get_grid_shape()
         points_per_field = np.prod(grid_shape) # np.prod(grid_shape) gives Nx*Nz or Nx*Ny*Nz
         total_size = 0
@@ -108,6 +146,9 @@ class FluidModel2D:
         return total_size
     
     def get_state(self):
+        """
+        Return a vector of current state collected from all fields
+        """
         data_slices = []
         for field in self.state_fields:
             # Gather from MPI processes and flatten
@@ -116,7 +157,9 @@ class FluidModel2D:
         return np.concatenate(data_slices)
     
     def set_state(self, state_vector):
-        dim =self.dim
+        """
+        Load a state vector to global grid data of each field
+        """
         grid_shape = self.get_grid_shape()
         points_per_field = int(np.prod(grid_shape))
         cursor = 0
@@ -135,6 +178,9 @@ class FluidModel2D:
             cursor += size
 
     def set_eq_state(self, state_vector):
+        """
+        Load a state vector to global grid data of each sub-field as a base state in eigenvalue problem
+        """
         grid_shape = self.get_grid_shape()
         points_per_field = int(np.prod(grid_shape))
         cursor = 0
@@ -153,6 +199,9 @@ class FluidModel2D:
             cursor += size
 
     def save_state(self, filename):
+        """
+        Save dealias-scaled grid data to a file
+        """
         import os
         import h5py
         target_dir = os.path.dirname(filename)
@@ -173,7 +222,8 @@ class FluidModel2D:
                     is_vector = len(field_obj.tensorsig) > 0
                     if is_vector:
                         # Generic component naming: u0, u1, u2 
-                        # Corresponds to (u, w) in 2D or (u, v, w) in 3D
+                        # Corresponds to (u, w) in 2D or (u, v, w) in 
+                        # print("shape of vector:", )
                         for i in range(data.shape[0]):
                             f.create_dataset(f'{name}_{i}', data=data[i])
                     else:
@@ -193,8 +243,10 @@ class FluidModel2D:
                 # Record dimensionality for easier post-processing
                 f.attrs['dim'] = self.dim
     def load_state(self, filename):
-        if self.dist.comm.rank == 0:
-            print(f"Loading state from {filename}")
+        """
+        Load dealias-scaled grid data from a file
+        """
+        logger.info(f"Loading state from {filename}")
         
         with h5py.File(filename, mode='r') as f:
             # current_shape = self.get_grid_shape() # (Nx, [Ny], Nz)
@@ -222,10 +274,12 @@ class FluidModel2D:
                 # Dedalus handles the distribution to different MPI ranks automatically
                 field.load_from_global_grid_data(data)
                 
-        if self.dist.comm.rank == 0:
-            print("State loaded successfully.")
+        logger.info("State loaded successfully.")
 
     def set_initial_conditions(self,mode = 'random', scale=1e-3):
+        """
+        Set initial condition for each field
+        """
         if mode == 'random':
             for field in self.state_fields:
                 field.fill_random('g', seed=42, distribution='normal', scale=scale) # Random noise
@@ -235,21 +289,40 @@ class FluidModel2D:
                 if i==0: # velocity
                     field.fill_random('g', seed=42, distribution='normal', scale=1e-3)
                 else: # scalar fields
-                    field['g'] = -scale*np.sin(2.0*np.pi*2*z)
+                    field['g'] = -scale*np.sin(2.0*np.pi*1*z)
         else:
             raise ValueError("Invalid mode for initial conditions")
 
-    def set_CFL(self, solver, initial_dt, cadence=10, safety=0.5, threshold=0.1,  max_change=1.5, min_change=0.5, max_dt=0.1):
+    def set_CFL(self, solver, initial_dt=0.001, cadence=10, safety=0.5, threshold=0.1,  max_change=1.5, min_change=0.5, max_dt=0.1):
         """
         Set up the CFL condition for adaptive time-stepping.
         """
         self.CFL = de.CFL(solver, initial_dt=initial_dt, cadence=cadence, safety=safety, threshold=threshold, 
                           max_change=max_change, min_change=min_change, max_dt=max_dt)
         self.CFL.add_velocity(self.u)
-    
 
+    def set_snapshots(self, solver, sim_dt=10.0, max_writes=1000, file_handler_mode = 'overwrite'):
+        """
+        Settings of saving data to 'snapshots/' for post-processing later
+        """
+        snapshots = solver.evaluator.add_file_handler('snapshots', sim_dt=sim_dt, max_writes=max_writes, mode=file_handler_mode)
+        for field in self.state_fields:
+            snapshots.add_task(field, name=field.name)
+    def set_checkpoints(self, solver, sim_dt=100.0, max_writes=1, file_handler_mode = 'overwrite'):
+        """
+        Settings of saving all information of current state to 'checkpoints/' for reload/restart simulation later
+        """
+        checkpoints = solver.evaluator.add_file_handler('checkpoints', sim_dt=sim_dt, max_writes=max_writes, mode=file_handler_mode)
+        checkpoints.add_tasks(solver.state)
+    def set_timehistory(self, solver, properties, sim_dt=10.0, max_writes=1000, file_handler_mode = 'overwrite'):
+        """
+        Settings of saving properties of fluid flow to 'timehistory/' for post-processing later
+        """
+        timehistory = solver.evaluator.add_file_handler('', sim_dt=sim_dt, max_writes=max_writes, mode=file_handler_mode)
+        for property in properties:
+            timehistory.add_task(property, name=property.name)
     def preview(self):
-        """ Preview the current state of the system. """
+        """ Preview the current state using last field of the system. """
         data_g = self.state_fields[-1].allgather_data('g').real
         if self.dist.comm.rank == 0:
             xaxis = self.x_basis.global_grid(self.dist, scale=self.dealias)
@@ -273,9 +346,76 @@ class FluidModel2D:
                 # self.preview_ax.set_title(f"Salt Concentration at time {self.sim_time:.2f}")
                 self.preview_fig.canvas.draw()
                 self.preview_fig.canvas.flush_events()         
+    def preview3D(self):
+        """ Preview the current state using last field in 3D using isosurfaces. """
+        if self.dim == 3:
+            import matplotlib.pyplot as plt
+            from mpl_toolkits.mplot3d import art3d
+            # pip install scikit-image
+            from skimage import measure # For Marching Cubes (isosurface)
     
-    def solve_EVP(self, evp_problem, x0, N=20, target=1.0):
-        solver = evp_problem.build_solver()
+            # Get the last field (usually Salinity or Temperature)
+            data_g = self.state_fields[-1].allgather_data('g').real
+            
+            if self.dist.comm.rank == 0:
+                # Get 1D axis arrays for the grid
+                xg = self.x_basis.global_grid(self.dist, scale=self.dealias).ravel()
+                yg = self.y_basis.global_grid(self.dist, scale=self.dealias).ravel()
+                zg = self.z_basis.global_grid(self.dist, scale=self.dealias).ravel()
+                
+                # 1. Initialize Figure
+                if self.preview_fig is None:
+                    plt.ion()
+                    self.preview_fig = plt.figure(figsize=(6, 5))
+                    self.preview_ax = self.preview_fig.add_subplot(111, projection='3d')
+                    self.preview_ax.set_xlabel('x')
+                    self.preview_ax.set_ylabel('y')
+                    self.preview_ax.set_zlabel('z')
+                else:
+                    self.preview_ax.clear() # Clear the previous frame
+                    self.preview_ax.set_xlabel('x')
+                    self.preview_ax.set_ylabel('y')
+                    self.preview_ax.set_zlabel('z')
+
+                # 2. Generate Isosurface using Marching Cubes
+                # Choose a level (e.g., the mean of the field)
+                level = (np.max(data_g) + np.min(data_g)) / 2
+                
+                try:
+                    # verts: coordinates of vertices, faces: triangles
+                    verts, faces, normals, values = measure.marching_cubes(data_g, level=level)
+                    
+                    # Scale vertices from index-space to physical-space
+                    # Indices are (i, j, k) corresponding to (x, y, z)
+                    verts[:, 0] = verts[:, 0] * (xg[1] - xg[0]) + xg[0]
+                    verts[:, 1] = verts[:, 1] * (yg[1] - yg[0]) + yg[0]
+                    verts[:, 2] = verts[:, 2] * (zg[1] - zg[0]) + zg[0]
+
+                    # 3. Create a 3D PolyCollection (the mesh)
+                    mesh = art3d.Poly3DCollection(verts[faces])
+                    mesh.set_edgecolor('none')
+                    mesh.set_alpha(0.6)
+                    mesh.set_facecolor('royalblue')
+                    
+                    self.preview_ax.add_collection3d(mesh)
+                    
+                    # Set limits based on domain
+                    self.preview_ax.set_xlim(xg.min(), xg.max())
+                    self.preview_ax.set_ylim(yg.min(), yg.max())
+                    self.preview_ax.set_zlim(zg.min(), zg.max())
+                    
+                except (ValueError, RuntimeError):
+                    # Fallback if the field is uniform or level is outside range
+                    self.preview_ax.text(0.5, 0.5, 0.5, "Field uniform - No surface", transform=self.preview_ax.transAxes)
+
+                self.preview_fig.canvas.draw()
+                self.preview_fig.canvas.flush_events()
+    def solve_EVP(self, x0, N=20, target=1.0):
+        """
+        Solve eigenvalue problem using Dedalus's EVP with a base state 'x0'. 
+        Finding N eigenmodes near to target eigenvalue.
+        """
+        solver = self.evp_problem.build_solver()
         self.set_eq_state(x0)
         solver.solve_sparse(solver.subproblems[0], N=N, target=target)
         evals = solver.eigenvalues
@@ -305,8 +445,8 @@ class FluidModel2D:
             fig.colorbar(im)
             plt.show(block=True)
             
-    def F_Tp(self, ivp_problem, x0, Tp):
-        solver = ivp_problem.build_solver(de.RK222)
+    def F_Tp(self, x0, Tp):
+        solver = self.ivp_problem.build_solver(de.RK222)
         self.set_state(x0)
         solver.stop_sim_time = Tp
         solver.sim_time = 0
@@ -319,10 +459,40 @@ class FluidModel2D:
         for i in range(num_steps):
             solver.step(dt)
         return self.get_state()
+    def save_time_dependent_solution(self, x0, Tp, ax=0, az=0):
+        solver = self.ivp_problem.build_solver(de.RK222)
+        self.set_state(x0)
+
+        # set T
+        sim_time = Tp # for periodic orbit
+        n_full_solution_steps = 100
+        # for traveling wave and relative periodic orbit
+        a_max = max(abs(ax),abs(az))
+        if a_max<0.05:
+            sim_time = 2 * Tp
+        else:
+            sim_time = 1/a_max * Tp
+            n_full_solution_steps = 2*100
+
+
+        solver.stop_sim_time = sim_time
+        solver.sim_time = 0
+        solver.iteration = 0
+        solver.stop_wall_time = np.inf
+        solver.stop_iteration = np.inf
+
+        self.set_snapshots(solver=solver, sim_dt=10.0)
+        self.set_timehistory(solver=solver,properties=properties)
+        
+        num_steps = int(sim_time/self.init_dt)
+        dt = sim_time/num_steps
+        for i in range(num_steps):
+            solver.step(dt)
+
     
-    def t_derivative(self, ivp_problem, x, delta_T):
+    def t_derivative(self, x, delta_T):
         # Return dF/dt
-        solver = ivp_problem.build_solver(de.RK222)
+        solver = self.ivp_problem.build_solver(de.RK222)
         self.set_state(x)
         solver.step(delta_T)
         x_out = self.get_state()
