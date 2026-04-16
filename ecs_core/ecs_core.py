@@ -19,7 +19,8 @@ class ECSSolver:
         self.Rxsearch = params['Rxsearch'] if params and 'Rxsearch' in params else False
         self.Rzsearch = params['Rzsearch'] if params and 'Rzsearch' in params else False
         # Set default parameters for the solver
-        self.odir = params['odir'] if params and 'odir' in params else './ecs_output/'
+        self.odir = params['odir'] if params and 'odir' in params else 'ecs_output/'
+        self.model.odir = self.odir
         self.tol = params['tol'] if params and 'tol' in params else 1e-8
         self.max_iter = params['max_iter'] if params and 'max_iter' in params else 20
         self.Tp = params['Tp'] if params and 'Tp' in params else 0.02
@@ -324,7 +325,7 @@ class ECSSolver:
                     Tp=0.02, 
                     ax = 0.0, 
                     az = 0.0,
-                    dt=2e-4):
+                    dt = 2e-4):
         self.Tsearch = Tsearch
         self.Rxsearch = Rxsearch
         self.Rzsearch = Rzsearch
@@ -351,6 +352,10 @@ class ECSSolver:
             self.save_flow_properties(xi)
             if i==0:
                 logger.info(f"Iteration {i}, Residual norm: {norm_b}, Tp: {xi[N_+self.Tsearch-1] if self.Tsearch else Tp}, ax: {xi[N_+self.Tsearch+self.Rxsearch-1] if self.Rxsearch else ax}, az: {xi[N_+self.Tsearch+self.Rxsearch+self.Rzsearch-1] if self.Rzsearch else az}")
+            T_temp = xi[N_+self.Tsearch-1] if self.Tsearch else self.Tp
+            ax_temp = xi[N_+self.Tsearch+self.Rxsearch-1] if self.Rxsearch else 0.0
+            az_temp = xi[N_+self.Tsearch+self.Rxsearch+self.Rzsearch-1] if self.Rzsearch else 0.0
+            
             if norm_b < self.tol:
                 logger.info("Convergence achieved!")
                 success = True
@@ -359,15 +364,15 @@ class ECSSolver:
                 self.model.save_state(self.odir + 'solution.h5')
                 # save time-dependent data
                 if self.Tsearch or self.Rxsearch or self.Rzsearch:
-                    self.model.save_time_dependent_solution()
+                    self.model.save_time_dependent_solution(xi[:N_],
+                                                            T_temp,
+                                                            ax_temp,
+                                                            az_temp)
                 # compute stability
                 if self.computeStability:
                     self.stability(xi)
                 break
             
-            T_temp = xi[N_+self.Tsearch-1] if self.Tsearch else self.Tp
-            ax_temp = xi[N_+self.Tsearch+self.Rxsearch-1] if self.Rxsearch else 0.0
-            az_temp = xi[N_+self.Tsearch+self.Rxsearch+self.Rzsearch-1] if self.Rzsearch else 0.0
             phi_base = self.G(xi[:N_], T_temp, ax_temp, az_temp)
             dxi, error, tr = self.GMRES(xi, xi_pert, phi_base, nonlinear_res, self.krylov_dim, self.trust_radius)
             xi += dxi # Update the solution

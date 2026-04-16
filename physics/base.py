@@ -25,7 +25,8 @@ class FluidModel:
         self.z_basis = None
         self.all_bases = None
         self.create_domain()
-        self.init_dt = 2e-4
+        self.init_dt = params['init_dt'] if params and 'init_dt' in params else 2e-4
+        self.odir = params['odir'] if params and 'odir' in params else "sim_output/"
 
         # Registry: Newton solver will see [u, ...]
         self.state_fields = []
@@ -305,14 +306,14 @@ class FluidModel:
         """
         Settings of saving data to 'snapshots/' for post-processing later
         """
-        snapshots = solver.evaluator.add_file_handler('snapshots', sim_dt=sim_dt, max_writes=max_writes, mode=file_handler_mode)
+        snapshots = solver.evaluator.add_file_handler(self.odir+'snapshots', sim_dt=sim_dt, max_writes=max_writes, mode=file_handler_mode)
         for field in self.state_fields:
             snapshots.add_task(field, name=field.name)
     def set_checkpoints(self, solver, sim_dt=100.0, max_writes=1, file_handler_mode = 'overwrite'):
         """
         Settings of saving all information of current state to 'checkpoints/' for reload/restart simulation later
         """
-        checkpoints = solver.evaluator.add_file_handler('checkpoints', sim_dt=sim_dt, max_writes=max_writes, mode=file_handler_mode)
+        checkpoints = solver.evaluator.add_file_handler(self.odir+'checkpoints', sim_dt=sim_dt, max_writes=max_writes, mode=file_handler_mode)
         checkpoints.add_tasks(solver.state)
     def set_timehistory(self, solver, properties, sim_dt=10.0, max_writes=1000, file_handler_mode = 'overwrite'):
         """
@@ -481,8 +482,8 @@ class FluidModel:
         solver.stop_wall_time = np.inf
         solver.stop_iteration = np.inf
 
-        self.set_snapshots(solver=solver, sim_dt=10.0)
-        self.set_timehistory(solver=solver,properties=properties)
+        self.set_snapshots(solver=solver, sim_dt=sim_time/n_full_solution_steps)
+        # self.set_timehistory(solver=solver,properties=properties)
         
         num_steps = int(sim_time/self.init_dt)
         dt = sim_time/num_steps
