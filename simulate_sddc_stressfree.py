@@ -9,8 +9,8 @@ from physics.double_diffusion import ShearedDiffusiveConvection
 
 
 params = {'Ra': 1e4, 'Pr': 7.0, 'tau': 0.01, 'Lambda': 2.0, 'Ri': 4.0,
-          'stress-free': False,
-          'odir':"sddc_noslip/"}
+          'stress-free': True,
+          'odir':"sddc_stressfree/"}
 model = ShearedDiffusiveConvection(params=params,
                                    sizes=(128, 128),
                                    bounds=(2*np.pi, 1.0),
@@ -29,5 +29,5 @@ while solver.proceed:
     solver.step(timestep)
     if (solver.iteration-1) % 1000 == 0:
         logger.info(f"Iteration: {solver.iteration}, Time: {solver.sim_time}, Timestep: {timestep}")
-        model.save_state("sddc_noslip/sample_sddc_Ra1e4_Ri4.h5")
+        model.save_state("sddc_stressfree/sample_sddc_Ra1e4_Ri4.h5")
         model.preview()
