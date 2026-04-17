@@ -74,7 +74,7 @@ class Continuation:
         self.ECSSolver.odir = self.odir + f'search-{self.isearch}/'
         self.ECSSolver.model.odir = self.ECSSolver.odir # update this for saving time-dependent solution later
         # Call your solver's main execution method
-        result = self.ECSSolver.NewtonSolver(x_guess)
+        result = self.ECSSolver.NewtonSolver(x0=x_guess,Tp=self.Tp,ax=self.ax,az=self.az)
 
         self.isearch += 1
         return result
@@ -96,6 +96,7 @@ class Continuation:
     
     def arc_length_continuation(self, mu_start, dmu, n_steps=50, mu_target=None):
         """Pseudo-arclength loop using direct class calls."""
+        N_ = self.ECSSolver.model.size()
         
         logger.info(f"Starting Arclength Continuation on {self.mu_name}...")
         if self.ECSSolver.model.dist.comm.rank == 0:
@@ -115,9 +116,15 @@ class Continuation:
             self.save_flow_properties(current_mu, properties)
 
             self.mu_history.append(current_mu)
-            self.x_history.append(sol.copy())
+            self.x_history.append(sol[:N_].copy())
             self.norm_history.append(norm)
-            
+            if self.Tsearch:
+                self.Tp_history.append(sol[N_+self.Tsearch-1])
+            if self.Rxsearch:
+                self.ax_history.append(sol[N_+self.Tsearch+self.Rxsearch-1])
+            if self.Rzsearch:
+                self.az_history.append(sol[N_+self.Tsearch+self.Rxsearch+self.Rzsearch-1])
+
             if i == 0:
                 self.s_history.append(0.0)
             else:

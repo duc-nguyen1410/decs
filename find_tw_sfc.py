@@ -28,6 +28,6 @@ x0 = nsolver.model.get_state()
 logger.info(f"Initial state norm: {np.linalg.norm(x0)}")
 solution, success, res, norm, properties = nsolver.NewtonSolver(x0,
                                                                 Rzsearch=True,
-                                                                az=-0.24,
+                                                                az=-0.2446059566700214,
                                                                 Tp = 0.2,
-                                                                dt = 1e-3)
+                                                                dt = 2e-4)

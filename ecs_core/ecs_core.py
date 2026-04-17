@@ -23,7 +23,7 @@ class ECSSolver:
         self.model.odir = self.odir
         self.tol = params['tol'] if params and 'tol' in params else 1e-8
         self.max_iter = params['max_iter'] if params and 'max_iter' in params else 20
-        self.Tp = params['Tp'] if params and 'Tp' in params else 0.02
+        self.Tp = params['Tp'] if params and 'Tp' in params else 0.2
         #
         self.d_tol = params['d_tol'] if params and 'd_tol' in params else 1e-7
         self.gmres_min_error = params['gmres_min_error'] if params and 'gmres_min_error' in params else 1e-3

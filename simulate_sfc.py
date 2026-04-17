@@ -9,7 +9,11 @@ from physics.double_diffusion import SaltFinger # import your physics model here
 sizes = (128, 128)
 bounds = (0.8, 1.0)
 params = {'Ra': 1e5, 'Pr': 7.0, 'tau': 0.01, 'Rrho': 40.0}
-SFC = SaltFinger(params=params, sizes=sizes, bounds=bounds, bounded=False)
+SFC = SaltFinger(params=params, 
+                 sizes=sizes, 
+                 bounds=bounds, 
+                 bounded=False,
+                 mode='sim')
 SFC.build_ivp_problem()
 solver = SFC.ivp_problem.build_solver(de.RK222)
 

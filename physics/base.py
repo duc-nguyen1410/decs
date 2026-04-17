@@ -5,11 +5,12 @@ import matplotlib.pyplot as plt
 import logging
 logger = logging.getLogger(__name__)
 class FluidModel:
-    def __init__(self, params, sizes, bounds, bounded=False, dealias=3/2):
+    def __init__(self, params, sizes, bounds, bounded=False, mode='ecs', dealias=3/2):
         """
         :param float sizes: Grid mesh of domain (Nx, Nz) or (Nx, Ny, Nz)
         :param float bounds: Domain size (Lx, Lz) or (Lx, Ly, Lz)
-        :param bool bounded: Is this a domain bounded in vertical (z) direction? If yes, it requires Chebyshev grid
+        :param bool bounded: Is this a domain bounded in vertical (z) direction? If yes, model will use Chebyshev grid instead of Fourier mode
+        :param str mode: The model will build dist with dtype=np.complex128 and bases with de.ComplexFourier as defaults to impose ECS's symmetry. However, CFL(u) will loss stability during long-term simulation due to ComplexFourier. Therefore, you need to set mode='sim' to use dtype=float64 and RealFourier instead, to get stability of CFL(u) operator for long-time simulation. 
         :param float dealias: Grid will be scaled for enhancing convective term
         """
         self.params = params
@@ -17,6 +18,7 @@ class FluidModel:
         self.bounds = bounds
         self.dim = len(sizes)
         self.bounded = bounded
+        self.mode = mode
         self.dealias = dealias
         self.coords = None
         self.dist = None
@@ -61,21 +63,33 @@ class FluidModel:
         else:
             raise ValueError("Sizes and bounds must be length 2 or 3.")
         
-        self.dist = de.Distributor(self.coords, dtype=np.complex128)
+        if self.mode=='sim':
+            self.dist = de.Distributor(self.coords, dtype=np.float64)
+        else:
+            self.dist = de.Distributor(self.coords, dtype=np.complex128)
 
         # Horizontal x-basis (Always periodic)
-        self.x_basis = de.ComplexFourier(self.coords['x'], size=Nx, bounds=(0, Lx), dealias=self.dealias)
+        if self.mode=='sim':
+            self.x_basis = de.RealFourier(self.coords['x'], size=Nx, bounds=(0, Lx), dealias=self.dealias)
+        else:
+            self.x_basis = de.ComplexFourier(self.coords['x'], size=Nx, bounds=(0, Lx), dealias=self.dealias)
         
         # Only if 3D, Always periodic
         if self.dim == 3:
-            self.y_basis = de.ComplexFourier(self.coords['y'], size=Ny, bounds=(0, Ly), dealias=self.dealias)
+            if self.mode=='sim':
+                self.y_basis = de.RealFourier(self.coords['y'], size=Ny, bounds=(0, Ly), dealias=self.dealias)
+            else:
+                self.y_basis = de.ComplexFourier(self.coords['y'], size=Ny, bounds=(0, Ly), dealias=self.dealias)
 
         if self.bounded:
             # Use Chebyshev for bounded domains
             self.z_basis = de.ChebyshevT(self.coords['z'], size=Nz, bounds=(0, Lz), dealias=self.dealias)
         else:
             # Use Fourier for fully periodic domains
-            self.z_basis = de.ComplexFourier(self.coords['z'], size=Nz, bounds=(0, Lz), dealias=self.dealias)
+            if self.mode=='sim':
+                self.z_basis = de.RealFourier(self.coords['z'], size=Nz, bounds=(0, Lz), dealias=self.dealias)
+            else:
+                self.z_basis = de.ComplexFourier(self.coords['z'], size=Nz, bounds=(0, Lz), dealias=self.dealias)
         
         if self.dim == 2:
             self.all_bases = (self.x_basis, self.z_basis)
@@ -288,7 +302,7 @@ class FluidModel:
             z = self.z_basis.local_grid(self.dist, scale=self.dealias)
             for i, field in enumerate(self.state_fields):
                 if i==0: # velocity
-                    field.fill_random('g', seed=42, distribution='normal', scale=1e-3)
+                    field.fill_random('g', seed=42, distribution='normal', scale=1e-2)
                 else: # scalar fields
                     field['g'] = -scale*np.sin(2.0*np.pi*1*z)
         else:
@@ -545,8 +559,10 @@ class FluidModel:
         # In 2D (comp, x, z), z is axis 2. In 3D (comp, x, y, z), z is axis 3.
         view = [np.newaxis] * coeff.ndim
         view[-1] = slice(None) # z is always the last axis
-        coeff *= phase_shift[tuple(view)]
+        coeff = coeff * phase_shift[tuple(view)]
+        # print("coeff.imag",np.linalg.norm(coeff.imag))
         field.load_from_global_coeff_data(coeff)
+        # field['c'] = coeff
     def apply_symmetry(self, x, ax=0, az=0):
         self.set_state(x)
         for field in self.state_fields:

@@ -24,10 +24,9 @@ nsolver = ECSSolver(model, nsolver_params)
 
 cont_params = {'mu_name': 'Lx',
                'odir': 'debug_continuation/',
-               'Tsearch': False, 'Tp': 0.02,
+               'Tsearch': False, 'Tp': 0.2,
                'Rxsearch': False, 'ax': 0.0,
                'Rzsearch': False, 'az': 0.0,
-               
                }
 Cont = Continuation(nsolver, cont_params)
 
