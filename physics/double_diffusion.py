@@ -296,8 +296,8 @@ class ShearedDiffusiveConvection(DoubleDiffusion):
         dz = lambda A: de.Differentiate(A, self.coords['z']) 
         h_mean = lambda A: de.Average(A,'x')
         # Heat and salt fluxes
-        Jt = -h_mean(-dz(totT))(z=0)
-        Js = -h_mean(-dz(totS))(z=0)
+        Jt = -h_mean(dz(totT))(z=0)
+        Js = -h_mean(dz(totS))(z=0)
         # Nusselt and Sherwood numbers 
         Nu = h_mean(np.sqrt(Pr*Ra)*w*totT - dz(totT))(z=Lz/2)
         Sh = h_mean(np.sqrt(Pr*Ra)/tau*w*totS - dz(totS))(z=Lz/2)
