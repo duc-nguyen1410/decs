@@ -346,6 +346,7 @@ class ECSSolver:
         for i in range(self.max_iter):
             logger.info("\n")
             self.model.set_state(xi[:N_])
+            self.model.save_state(self.odir + 'solution_temp.h5')
             self.model.preview()
             nonlinear_res = self.NonlinearOperator(xi)
             norm_b = np.linalg.norm(nonlinear_res)
