@@ -209,12 +209,12 @@ class ShearedDiffusiveConvection(DoubleDiffusion):
                    'Ri':self.params['Ri']})
         # print("initial namespace:", ns)
         tau_p = self.dist.Field(name='tau_p')
-        tau_u1 = self.dist.VectorField(self.coords, name='tau_u1', bases=self.x_basis)
-        tau_te1 = self.dist.Field(name='tau_te1', bases=self.x_basis)
-        tau_sa1 = self.dist.Field(name='tau_sa1', bases=self.x_basis)
-        tau_u2 = self.dist.VectorField(self.coords, name='tau_u2', bases=self.x_basis)
-        tau_te2 = self.dist.Field(name='tau_te2', bases=self.x_basis)
-        tau_sa2 = self.dist.Field(name='tau_sa2', bases=self.x_basis)
+        tau_u1 = self.dist.VectorField(self.coords, name='tau_u1', bases=self.all_bases[:-1])
+        tau_te1 = self.dist.Field(name='tau_te1', bases=self.all_bases[:-1])
+        tau_sa1 = self.dist.Field(name='tau_sa1', bases=self.all_bases[:-1])
+        tau_u2 = self.dist.VectorField(self.coords, name='tau_u2', bases=self.all_bases[:-1])
+        tau_te2 = self.dist.Field(name='tau_te2', bases=self.all_bases[:-1])
+        tau_sa2 = self.dist.Field(name='tau_sa2', bases=self.all_bases[:-1])
 
         ez = ns['ez']
         lift_basis = self.z_basis.derivative_basis(1)
