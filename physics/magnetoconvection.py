@@ -25,9 +25,12 @@ class MagnetoConvection(FluidModel):
         self.Phi_eq = self.dist.Field(name='Phi_eq', bases=self.all_bases)
 
         # Newton solver now sees [u, Phi, te], save 'te' as last element for preview if needed
-        self.state_fields.extend([self.u, self.Phi, self.te])
-        # for EVP
-        self.eq_fields.extend([self.u_eq, self.Phi_eq, self.te_eq])
+        if self.dim==3:
+            self.state_fields = [self.u, self.Phi, self.te] # for ECS
+            self.eq_fields = [self.u_eq, self.Phi_eq, self.te_eq] # for EVP
+        else: 
+            self.state_fields = [self.u, self.te] # for ECS
+            self.eq_fields = [self.u_eq, self.te_eq] # for EVP
     def rebuild_fields(self):
         # pressure p (scalar)
         self.p = self.dist.Field(name='p', bases=self.all_bases)
@@ -46,11 +49,11 @@ class MagnetoConvection(FluidModel):
 
         # Newton solver now sees [u, Phi, te], save 'te' as last element for preview if needed
         if self.dim==3:
-            self.state_fields.extend([self.u, self.Phi, self.te]) # for ECS
-            self.eq_fields.extend([self.u_eq, self.Phi_eq, self.te_eq]) # for EVP
+            self.state_fields = [self.u, self.Phi, self.te] # for ECS
+            self.eq_fields = [self.u_eq, self.Phi_eq, self.te_eq] # for EVP
         else: 
-            self.state_fields.extend([self.u, self.te]) # for ECS
-            self.eq_fields.extend([self.u_eq, self.te_eq]) # for EVP
+            self.state_fields = [self.u, self.te] # for ECS
+            self.eq_fields = [self.u_eq, self.te_eq] # for EVP
 
     def _get_base_namespace(self):
         unit_vectors = self.coords.unit_vector_fields(self.dist)
@@ -101,15 +104,13 @@ class BoundedQuasiStaticMagnetoConvection(MagnetoConvection):
             grad_Phi = de.grad(self.Phi) + ez*lift(tau_Phi1) 
             lap_Phi = de.div(grad_Phi)
             # J is a 3D Vector
-            J = - grad_Phi + de.cross(self.u, ez)
+            J = - grad_Phi + de.cross(self.u, ez) # quasi-static MHD Ohm’s law
             Lorentz_force = de.cross(J, ez)
         else:
             # In 2D (xz), u = (ux, w). u x ez = -ux*ey. 
             # (u x ez) x ez = -ux*ex.
             # This bypasses the need for the Phi Poisson equation entirely.
             Lorentz_force = - (self.u @ ex) * ex
-
-        # J = - grad_Phi + de.cross(self.u, ez) # quasi-static MHD Ohm’s law
 
         dx = lambda A: de.Differentiate(A, self.coords['x']) 
         dz = lambda A: de.Differentiate(A, self.coords['z'])
