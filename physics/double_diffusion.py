@@ -232,11 +232,11 @@ class ShearedDiffusiveConvection(DoubleDiffusion):
 
         baru = self.dist.Field(bases=self.z_basis)
         Uw = 1.0/np.sqrt(self.params['Ri'])
-        print("Ri=",self.params['Ri'])
-        print("Ra=",self.params['Ra'])
-        print("Pr=",self.params['Pr'])
-        print("tau=",self.params['tau'])
-        print("Lambda=",self.params['Lambda'])
+        # print("Ri=",self.params['Ri'])
+        # print("Ra=",self.params['Ra'])
+        # print("Pr=",self.params['Pr'])
+        # print("tau=",self.params['tau'])
+        # print("Lambda=",self.params['Lambda'])
         z, = self.dist.local_grids(self.z_basis)
         Lz = self.z_basis.bounds[1]
         # print("Lz=",Lz)
