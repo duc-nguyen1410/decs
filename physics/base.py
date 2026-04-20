@@ -95,7 +95,22 @@ class FluidModel:
             self.all_bases = (self.x_basis, self.z_basis)
         else:
             self.all_bases = (self.x_basis, self.y_basis, self.z_basis)
-        
+    def _get_base_namespace(self):
+        unit_vectors = self.coords.unit_vector_fields(self.dist)
+        if len(unit_vectors) == 2:
+            ex, ez = unit_vectors
+            ey = None # Or a zero-field if needed
+        else:
+            ex, ey, ez = unit_vectors
+        ns = {
+            'ex': ex, 'ez': ez, 
+            'w': self.u @ ez,
+            'ux': self.u @ ex,
+        }
+        if ey is not None:
+            ns['ey'] = ey
+            ns['uy'] = self.u @ ey
+        return ns
     
     def set_param(self, name, value):
         """Update a parameter and return True if a domain rebuild is needed."""

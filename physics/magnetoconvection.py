@@ -54,30 +54,15 @@ class MagnetoConvection(FluidModel):
         else: 
             self.state_fields = [self.u, self.te] # for ECS
             self.eq_fields = [self.u_eq, self.te_eq] # for EVP
-
-    def _get_base_namespace(self):
-        unit_vectors = self.coords.unit_vector_fields(self.dist)
-        if len(unit_vectors) == 2:
-            ex, ez = unit_vectors
-            ey = None # Or a zero-field if needed
-        else:
-            ex, ey, ez = unit_vectors
-        ns = {
-            'ex': ex, 'ez': ez, 
-            'w': self.u @ ez,
-            'ux': self.u @ ex,
-        }
-        if ey is not None:
-            ns['ey'] = ey
-            ns['uy'] = self.u @ ey
-        ns.update(self.params)
-        return ns
     
 class BoundedQuasiStaticMagnetoConvection(MagnetoConvection):
     def build_problems(self):
         self.build_ivp_problem()
     def build_ivp_problem(self):
         ns = self._get_base_namespace()
+        ns.update({'Ra':self.params['Ra'],
+                   'Pr':self.params['Pr'],
+                   'Q':self.params['Q']})
         tau_p = self.dist.Field(name='tau_p')
         tau_u1 = self.dist.VectorField(self.coords, name='tau_u1', bases=self.all_bases[:-1])
         tau_te1 = self.dist.Field(name='tau_te1', bases=self.all_bases[:-1])

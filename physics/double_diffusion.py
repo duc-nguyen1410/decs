@@ -46,26 +46,6 @@ class DoubleDiffusion(FluidModel):
         # re-collect fields to field list
         self.state_fields = [self.u, self.te, self.sa]
         self.eq_fields = [self.u_eq, self.te_eq, self.sa_eq]
-
-    def _get_base_namespace(self):
-        unit_vectors = self.coords.unit_vector_fields(self.dist)
-        if len(unit_vectors) == 2:
-            ex, ez = unit_vectors
-            ey = None # Or a zero-field if needed
-        else:
-            ex, ey, ez = unit_vectors
-        ns = {
-            'ex': ex, 'ez': ez, 
-            'w': self.u @ ez,
-            'ux': self.u @ ex,
-        }
-        if ey is not None:
-            ns['ey'] = ey
-            ns['uy'] = self.u @ ey
-        # ns.update(self.params)
-        return ns
-    
-    
     
 class SaltFinger(DoubleDiffusion):
     def build_problems(self):
