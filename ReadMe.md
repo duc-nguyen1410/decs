@@ -1,5 +1,9 @@
-# DECS
-A Dedalus-based Solver finding Exact Coherent Structures in Fluid Dynamics
+# DeCS
+A Dedalus-based Solver finding Exact Coherent Structures in Fluid Dynamics.
+
+In DeCS, we separately developed Python classes, including physical models `physics/` in fluid dynamics using [Dedalus](https://dedalus-project.org/), a solver finding ECS `ecs_core/` (equilibria, traveling wave, (relative) periodic orbits), and a continuation feature `continuation/`.
+
+Please read instructuons for [conducting simulation](docs/simulation.md) of [available models](docs/models.md), [finding ECS](docs/find_ecs.md), and [parametric continuation](docs/continuation.md). Also, can build [new equations](docs/build_equations.md) by yourself if needed.
 
 <!-- Please cite as :  -->
 
