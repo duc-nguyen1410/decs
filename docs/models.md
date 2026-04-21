@@ -1,43 +1,49 @@
 Currently, we have created two models: 
 
 # Double-diffusive convection
-Double-diffusive convection (DDC) requires velocity ($\boldsymbol{U}$), temperature ($T$), salinity ($S$), and pressure ($p$). We decompose the velocity, temperature, and salinity into a base state ($\boldsymbol{U}_b, T_b, S_b$) and fluctuations ($\boldsymbol{u}, \theta, s$). Fluctuations will be used as main computing variables in simulation, their visualizations, and in [ECS solver](find_ecs.md). The base state depends on the following specific problems. 
+Double-diffusive convection (DDC) requires velocity ($\bm{U}$), temperature ($T$), salinity ($S$), and pressure ($p$). We decompose the velocity, temperature, and salinity into a base state ($\bm{U}_b, T_b, S_b$) and fluctuations ($\bm{u}, \theta, s$). Fluctuations will be used as main computing variables in simulation, their visualizations, and in [ECS solver](find_ecs.md). The base state depends on the following specific problems. 
 
 ## Salt finger convection `SaltFinger`
 This is unbounded salt finger convection `bounded=False`. Base state is:
 
-$$\boldsymbol{U}_b=\boldsymbol{0},\quad T_b=S_b=z$$
+$$\bm{U}_b=\bm{0},\quad T_b=S_b=z$$
 
 Nondimensional governing equations in terms of fluctuation using thermal diffusion scale:
 
-$$\begin{align}
-\nabla\cdot \boldsymbol{u} = 0,\\
-\partial_t \boldsymbol{u}+\boldsymbol{u}\cdot\nabla\boldsymbol{u} = -\nabla p + Pr\nabla^2\boldsymbol{u} + PrRa\left(\theta-R_\rho^{-1} s\right)\mathbf{e}_z,\\
-\partial_t \theta +\boldsymbol{u}\cdot\nabla \theta +w = \nabla^2 \theta,\\
-\partial_t s +\boldsymbol{u}\cdot\nabla s +w = \tau\nabla^2 s
-\end{align}$$
+$$
+\begin{align}
+    \nabla\cdot \bm{u} = 0,\\
+    \partial_t \bm{u}+\bm{u}\cdot\nabla\bm{u} = -\nabla p + Pr\nabla^2\bm{u} + PrRa\left(\theta-R_\rho^{-1} s\right)\bm{e}_z,\\
+    \partial_t \theta +\bm{u}\cdot\nabla \theta +w = \nabla^2 \theta,\\
+    \partial_t s +\bm{u}\cdot\nabla s +w = \tau\nabla^2 s
+\end{align}
+$$
 
 with dimensionless parameters
 
-$$Ra=\frac{g\beta_T \Delta
- T^* H^3}{\kappa_T\nu}, \quad Pr=\frac{\nu}{\kappa_T}, \quad \tau=\frac{\kappa_S}{\kappa_T}, \quad R_\rho=\frac{\beta_T\Delta T^*}{\beta_S\Delta S^*}$$
+$$
+Ra=\frac{g\beta_T \Delta T^* H^3}{\kappa_T\nu}, \quad Pr=\frac{\nu}{\kappa_T}, \quad \tau=\frac{\kappa_S}{\kappa_T}, \quad R_\rho=\frac{\beta_T\Delta T^*}{\beta_S\Delta S^*}
+$$
+
 and constraints for homogeneous mode:
 
-$$\int\int\int \boldsymbol{u} = \int\int\int \theta = \int\int\int s = 0$$
+$$\int\int\int \bm{u} = \int\int\int \theta = \int\int\int s = 0$$
 
 
 ## Diffusive convection `DiffusiveConvection`
 This is unbounded diffusive convection `bounded=False`. Base state is:
 
-$$\boldsymbol{U}_b=\boldsymbol{0},\quad T_b=S_b=-z$$
+$$\bm{U}_b=\bm{0},\quad T_b=S_b=-z$$
 
 Nondimensional governing equations in terms of fluctuation using thermal diffusion scale:
 
 $$
-\nabla\cdot \boldsymbol{u} = 0,\\
-\partial_t \boldsymbol{u}+\boldsymbol{u}\cdot\nabla\boldsymbol{u} = -\nabla p + Pr\nabla^2\boldsymbol{u} + PrRa\left(\theta-\Lambda s\right)\mathbf{e}_z,\\
-\partial_t \theta +\boldsymbol{u}\cdot\nabla \theta -w = \nabla^2 \theta,\\
-\partial_t s +\boldsymbol{u}\cdot\nabla s -w = \tau\nabla^2 s
+\begin{align}
+    \nabla\cdot \bm{u} = 0,\\
+    \partial_t \bm{u}+\bm{u}\cdot\nabla\bm{u} = -\nabla p + Pr\nabla^2\bm{u} + PrRa\left(\theta-\Lambda s\right)\bm{e}_z,\\
+    \partial_t \theta +\bm{u}\cdot\nabla \theta -w = \nabla^2 \theta,\\
+    \partial_t s +\bm{u}\cdot\nabla s -w = \tau\nabla^2 s
+\end{align}
 $$
 
 with dimensionless parameters
@@ -47,20 +53,22 @@ $$Ra=\frac{g\beta_T \Delta
 
 and constraints for homogeneous mode:
 
-$$\int\int\int \boldsymbol{u} = \int\int\int \theta=\int\int\int s = 0$$
+$$\int\int\int \bm{u} = \int\int\int \theta=\int\int\int s = 0$$
 
 ## Sheared diffusive convection `ShearedDiffusiveConvection`
 This is vertical-bounded diffusive convection `bounded=True`. Base state is:
 
-$$\boldsymbol{U}_b=\left(z-\frac{L_z}{2}\right)\frac{1}{\sqrt{Ri}}\mathbf{e}_x,\quad T_b=S_b=-z$$
+$$\bm{U}_b=\left(z-\frac{L_z}{2}\right)\frac{1}{\sqrt{Ri}}\bm{e}_x,\quad T_b=S_b=-z$$
 
 Nondimensional governing equations in terms of fluctuation using free-fall velocity scale:
 
 $$
-\nabla\cdot \boldsymbol{u} = 0,\\
-\partial_t \boldsymbol{u} + U_b \partial_x u + w\partial_z U_b \mathbf{e}_x+\boldsymbol{u}\cdot\nabla\boldsymbol{u} = -\nabla p + \sqrt{\frac{Pr}{Ra}}\nabla^2\boldsymbol{u} + \left(\theta-\Lambda s\right)\mathbf{e}_z,\\
-\partial_t \theta + U_b\partial_x \theta +\boldsymbol{u}\cdot\nabla \theta -w = \frac{1}{\sqrt{PrRa}} \nabla^2 \theta,\\
-\partial_t s + U_b\partial_x s +\boldsymbol{u}\cdot\nabla s -w = \frac{\tau}{\sqrt{PrRa}}\nabla^2 s
+\begin{align}
+\nabla\cdot \bm{u} = 0,\\
+\partial_t \bm{u} + U_b \partial_x u + w\partial_z U_b \bm{e}_x+\bm{u}\cdot\nabla\bm{u} = -\nabla p + \sqrt{\frac{Pr}{Ra}}\nabla^2\bm{u} + \left(\theta-\Lambda s\right)\bm{e}_z,\\
+\partial_t \theta + U_b\partial_x \theta +\bm{u}\cdot\nabla \theta -w = \frac{1}{\sqrt{PrRa}} \nabla^2 \theta,\\
+\partial_t s + U_b\partial_x s +\bm{u}\cdot\nabla s -w = \frac{\tau}{\sqrt{PrRa}}\nabla^2 s
+\end{align}
 $$
 
 with dimensionless parameters
@@ -73,7 +81,7 @@ Ra=\frac{g\beta_T \Delta T^* H^3}{\kappa_T\nu}, \quad Pr=\frac{\nu}{\kappa_T}, \
 Boundary condition:
 - No-slip (standard, `'stress-free'=False` in `params`) at bottom and top walls:
 
-$$\boldsymbol{u}=\theta=s=0$$
+$$\bm{u}=\theta=s=0$$
 
 - Stress-free (optional, `'stress-free'=True` in `params`)  at bottom and top sides:
 
@@ -96,11 +104,13 @@ model = ShearedDiffusiveConvection(params=params,
 This is vertical-bounded domain `bounded=True`.
 
 $$
-\partial_t \boldsymbol{u} + \boldsymbol{u}\cdot\nabla\boldsymbol{u} = -\nabla p + \sqrt{\frac{Pr}{Ra}}\nabla^2\boldsymbol{u} + \theta\mathbf{e}_z + Q\sqrt{\frac{Pr}{Ra}}\boldsymbol{J}\times\mathbf{e}_z,\\
-\partial_t \theta + \boldsymbol{u}\cdot\nabla \theta - w = \frac{1}{\sqrt{PrRa}} \nabla^2 \theta,\\
-\nabla\cdot \boldsymbol{u} = 0,\\
-\boldsymbol{J} = -\nabla\Phi + \boldsymbol{u}\times\mathbf{e}_z,\\
-\nabla\cdot \boldsymbol{J} = 0,\\
+\begin{align}
+\partial_t \bm{u} + \bm{u}\cdot\nabla\bm{u} = -\nabla p + \sqrt{\frac{Pr}{Ra}}\nabla^2\bm{u} + \theta\bm{e}_z + Q\sqrt{\frac{Pr}{Ra}}\bm{J}\times\bm{e}_z,\\
+\partial_t \theta + \bm{u}\cdot\nabla \theta - w = \frac{1}{\sqrt{PrRa}} \nabla^2 \theta,\\
+\nabla\cdot \bm{u} = 0,\\
+\bm{J} = -\nabla\Phi + \bm{u}\times\bm{e}_z,\\
+\nabla\cdot \bm{J} = 0,\\
+\end{align}
 $$
 
 with dimensionless parameters
@@ -111,7 +121,7 @@ $$
 
 Boundary condition:
 <!-- - No-slip (standard, `'stress-free'=False` in `params`) at bottom and top walls:
-$$\boldsymbol{u}=\theta=0, \quad \partial_z \Phi = 0$$ -->
+$$\bm{u}=\theta=0, \quad \partial_z \Phi = 0$$ -->
 
 - Stress-free (optional, `'stress-free'=True` in `params`)  at bottom and top sides:
 - 
