@@ -10,12 +10,12 @@ $$\boldsymbol{U}_b=\boldsymbol{0},\quad T_b=S_b=z$$
 
 Nondimensional governing equations in terms of fluctuation using thermal diffusion scale:
 
-$$
+\begin{align}
 \nabla\cdot \boldsymbol{u} = 0,\\
 \partial_t \boldsymbol{u}+\boldsymbol{u}\cdot\nabla\boldsymbol{u} = -\nabla p + Pr\nabla^2\boldsymbol{u} + PrRa\left(\theta-R_\rho^{-1} s\right)\mathbf{e}_z,\\
 \partial_t \theta +\boldsymbol{u}\cdot\nabla \theta +w = \nabla^2 \theta,\\
 \partial_t s +\boldsymbol{u}\cdot\nabla s +w = \tau\nabla^2 s
-$$
+\end{align}
 
 with dimensionless parameters
 
