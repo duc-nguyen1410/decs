@@ -13,16 +13,16 @@ Nondimensional governing equations in terms of fluctuation using thermal diffusi
 $$
 \begin{align}
     \nabla\cdot \boldsymbol{u} = 0,\\
-    \partial_t \boldsymbol{u}+\boldsymbol{u}\cdot\nabla\boldsymbol{u} = -\nabla p + Pr\nabla^2\boldsymbol{u} + PrRa\left(\theta-R_\rho^{-1} s\right)\mathbf{e}_z,\\
-    \partial_t \theta +\boldsymbol{u}\cdot\nabla \theta +w = \nabla^2 \theta,\\
-    \partial_t s +\boldsymbol{u}\cdot\nabla s +w = \tau\nabla^2 s
+    \partial_t \boldsymbol{u}+\boldsymbol{u}\cdot\nabla\boldsymbol{u} = -\nabla p + Pr\nabla^{2}\boldsymbol{u} + PrRa\left(\theta-R_\rho^{-1} s\right)\mathbf{e}_z,\\
+    \partial_t \theta +\boldsymbol{u}\cdot\nabla \theta +w = \nabla^{2} \theta,\\
+    \partial_t s +\boldsymbol{u}\cdot\nabla s +w = \tau\nabla^{2} s
 \end{align}
 $$
 
 with dimensionless parameters
 
 $$
-Ra=\frac{g\beta_T \Delta T^* H^3}{\kappa_T\nu}, \quad Pr=\frac{\nu}{\kappa_T}, \quad \tau=\frac{\kappa_S}{\kappa_T}, \quad R_\rho=\frac{\beta_T\Delta T^*}{\beta_S\Delta S^*}
+Ra=\frac{g\beta_T \Delta T^{*} H^{3}}{\kappa_T\nu}, \quad Pr=\frac{\nu}{\kappa_T}, \quad \tau=\frac{\kappa_S}{\kappa_T}, \quad R_\rho=\frac{\beta_T\Delta T^{*}}{\beta_S\Delta S^{*}}
 $$
 
 and constraints for homogeneous mode:
@@ -49,7 +49,7 @@ $$
 with dimensionless parameters
 
 $$Ra=\frac{g\beta_T \Delta
- T^* H^3}{\kappa_T\nu}, \quad Pr=\frac{\nu}{\kappa_T}, \quad \tau=\frac{\kappa_S}{\kappa_T}, \quad \Lambda=\frac{\beta_S\Delta S^*}{\beta_T\Delta T^*}$$
+ T^{*} H^{3}}{\kappa_T\nu}, \quad Pr=\frac{\nu}{\kappa_T}, \quad \tau=\frac{\kappa_S}{\kappa_T}, \quad \Lambda=\frac{\beta_S\Delta S^{*}}{\beta_T\Delta T^{*}}$$
 
 and constraints for homogeneous mode:
 
@@ -74,7 +74,7 @@ $$
 with dimensionless parameters
 
 $$
-Ra=\frac{g\beta_T \Delta T^* H^3}{\kappa_T\nu}, \quad Pr=\frac{\nu}{\kappa_T}, \quad \tau=\frac{\kappa_S}{\kappa_T}, \quad \Lambda=\frac{\beta_S\Delta S^*}{\beta_T\Delta T^*}, \quad Ri=\frac{g\beta_T\Delta T^*H}{U_w^{*2}}
+Ra=\frac{g\beta_T \Delta T^{*} H^{3}}{\kappa_T\nu}, \quad Pr=\frac{\nu}{\kappa_T}, \quad \tau=\frac{\kappa_S}{\kappa_T}, \quad \Lambda=\frac{\beta_S\Delta S^{*}}{\beta_T\Delta T^{*}}, \quad Ri=\frac{g\beta_T\Delta T^{*}H}{U_w^{*2}}
  $$
 
 
