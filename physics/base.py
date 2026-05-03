@@ -106,10 +106,26 @@ class FluidModel:
             'ex': ex, 'ez': ez, 
             'w': self.u @ ez,
             'ux': self.u @ ex,
+            'dx': lambda A: de.Differentiate(A, self.coords['x']),
+            'dz': lambda A: de.Differentiate(A, self.coords['z']),
         }
         if ey is not None:
             ns['ey'] = ey
             ns['uy'] = self.u @ ey
+        
+        if self.dim == 3:
+            ns['dy'] = lambda A: de.Differentiate(A, self.coords['y'])
+            # Horizontal mean for 3D
+            ns['h_mean'] = lambda A: de.Average(A, ('x', 'y'))
+        else:
+            # Horizontal mean for 2D
+            ns['h_mean'] = lambda A: de.Average(A, 'x')
+
+        ns['vol_avg'] = lambda A: de.Average(A) # Global scalar average
+
+        z, = self.dist.local_grids(self.z_basis)
+        ns['z'] = z
+        # ns.update(self.params)
         return ns
     
     def set_param(self, name, value):
@@ -344,13 +360,15 @@ class FluidModel:
         """
         checkpoints = solver.evaluator.add_file_handler(self.odir+'checkpoints', sim_dt=sim_dt, max_writes=max_writes, mode=file_handler_mode)
         checkpoints.add_tasks(solver.state)
-    def set_timehistory(self, solver, properties, sim_dt=10.0, max_writes=1000, file_handler_mode = 'overwrite'):
+    def set_timehistory(self, solver, tasks, sim_dt=10.0, max_writes=1000, file_handler_mode = 'overwrite'):
         """
-        Settings of saving properties of fluid flow to 'timehistory/' for post-processing later
+        Settings of saving tasks of fluid flow to 'timehistory/' for post-processing later
         """
-        timehistory = solver.evaluator.add_file_handler('', sim_dt=sim_dt, max_writes=max_writes, mode=file_handler_mode)
-        for property in properties:
-            timehistory.add_task(property, name=property.name)
+        timehistory = solver.evaluator.add_file_handler(self.odir+'timehistory', sim_dt=sim_dt, max_writes=max_writes, mode=file_handler_mode)
+        for task_name, task_expression in tasks.items():
+            if task_name == '': continue # Skip placeholders
+            # Add the task using the string expression and the assigned name
+            timehistory.add_task(task_expression, name=task_name)
     def preview(self):
         """ Preview the current state using last field of the system. """
         data_g = self.state_fields[-1].allgather_data('g').real
