@@ -244,12 +244,16 @@ class FluidModel:
             field.load_from_global_grid_data(data)
             cursor += size
 
-    def save_state(self, filename):
+    def save_state(self, filename, format='h5'):
         """
         Save dealias-scaled grid data to a file
         """
         import os
         import h5py
+        try:
+            import netCDF4 as nc
+        except ImportError:
+            nc = None
         target_dir = os.path.dirname(filename)
         if self.dist.comm.rank == 0:
             if target_dir and not os.path.exists(target_dir):
@@ -262,32 +266,66 @@ class FluidModel:
             gathered_data[field.name] = field.allgather_data('g').real
 
         if self.dist.comm.rank == 0:
-            with h5py.File(filename, mode='w') as f:
-                for name, data in gathered_data.items():
-                    field_obj = next(obj for obj in self.state_fields if obj.name == name)
-                    is_vector = len(field_obj.tensorsig) > 0
-                    if is_vector:
-                        # Generic component naming: u0, u1, u2 
-                        # Corresponds to (u, w) in 2D or (u, v, w) in 
-                        # print("shape of vector:", )
-                        for i in range(data.shape[0]):
-                            f.create_dataset(f'{name}_{i}', data=data[i])
-                    else:
-                        # Scalar field (e.g., te, sa)
-                        f.create_dataset(name, data=data)
+            # --- HDF5 Path ---
+            if format == 'h5':
+                with h5py.File(filename, mode='w') as f:
+                    for name, data in gathered_data.items():
+                        field_obj = next(obj for obj in self.state_fields if obj.name == name)
+                        is_vector = len(field_obj.tensorsig) > 0
+                        if is_vector:
+                            # Generic component naming: u0, u1, u2 
+                            # Corresponds to (u, w) in 2D or (u, v, w) in 
+                            # print("shape of vector:", )
+                            for i in range(data.shape[0]):
+                                f.create_dataset(f'{name}_{i}', data=data[i])
+                        else:
+                            # Scalar field (e.g., te, sa)
+                            f.create_dataset(name, data=data)
+                    
+                    # Save grid info for easy plotting later
+                    # This handles (xg, zg) or (xg, yg, zg)
+                    grids = [basis.global_grid(self.dist, scale=self.dealias) 
+                            for basis in self.all_bases]
+                    
+                    grid_names = ['xg', 'yg', 'zg'] if self.dim == 3 else ['xg', 'zg']
+                    
+                    for g_name, g_data in zip(grid_names, grids):
+                        f.create_dataset(g_name, data=g_data)
+                    
+                    # Record dimensionality for easier post-processing
+                    f.attrs['dim'] = self.dim
+            
+            # --- NetCDF Path ---
+            elif format == 'nc':
+                if nc is None:
+                    raise ImportError("netCDF4 library is required for .nc output.")
                 
-                # Save grid info for easy plotting later
-                # This handles (xg, zg) or (xg, yg, zg)
-                grids = [basis.global_grid(self.dist, scale=self.dealias) 
-                        for basis in self.all_bases]
-                
-                grid_names = ['xg', 'yg', 'zg'] if self.dim == 3 else ['xg', 'zg']
-                
-                for g_name, g_data in zip(grid_names, grids):
-                    f.create_dataset(g_name, data=g_data)
-                
-                # Record dimensionality for easier post-processing
-                f.attrs['dim'] = self.dim
+                with nc.Dataset(filename, mode='w', format='NETCDF4') as ds:
+                    ds.dim_attr = self.dim
+                    grids = [b.global_grid(self.dist, scale=self.dealias) for b in self.all_bases]
+                    
+                    # Define dimensions and coordinates
+                    coord_names = ['x', 'y', 'z'] if self.dim == 3 else ['x', 'z']
+                    for c_name, g_data in zip(coord_names, grids):
+                        # g_data is often 2D/3D from global_grid; we take the 1D slice
+                        # x is 1st axis, y 2nd, z 3rd (standard Dedalus)
+                        dim_size = g_data.size
+                        ds.createDimension(c_name, dim_size)
+                        # print(f"{c_name} size={dim_size} shape={np.shape(g_data)}") # checked: correct
+                        v = ds.createVariable(c_name, 'f8', (c_name,))
+                        v[:] = g_data.flatten()
+
+                    # Add Fields
+                    for name, data in gathered_data.items():
+                        field_obj = next(obj for obj in self.state_fields if obj.name == name)
+                        if len(field_obj.tensorsig) > 0: # is vector
+                            for i in range(data.shape[0]):
+                                var = ds.createVariable(f'{name}_{i}', 'f8', tuple(coord_names))
+                                var[:] = data[i]
+                                # print(np.shape(data[i]))
+                        else:
+                            var = ds.createVariable(name, 'f8', tuple(coord_names))
+                            var[:] = data
     def load_state(self, filename):
         """
         Load dealias-scaled grid data from a file
