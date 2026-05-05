@@ -406,6 +406,12 @@ class FluidModel:
                     field['g'] = -scale*np.sin(2.0*np.pi*1*z)
         else:
             raise ValueError("Invalid mode for initial conditions")
+    def add_perturbation(self,scale=1e-3):
+        """
+        add a perturbation to each field
+        """
+        for field in self.state_fields:
+            field['g'] += scale * np.random.standard_normal(field['g'].shape)
 
     def set_CFL(self, solver, initial_dt=0.001, cadence=10, safety=0.5, threshold=0.1,  max_change=1.5, min_change=0.5, max_dt=0.1):
         """
