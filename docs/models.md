@@ -60,7 +60,7 @@ This is vertical-bounded diffusive convection `bounded=True`. Base state is:
 
 $$\boldsymbol{U}_b=\left(z-\frac{L_z}{2}\right)\frac{1}{\sqrt{Ri}}\boldsymbol{e}_x,\quad T_b=S_b=-z$$
 
-Nondimensional governing equations in terms of fluctuation using free-fall velocity scale:
+Nondimensional governing equations in terms of fluctuation using free-fall velocity scale $U_{ff}=\sqrt{g\beta_T\Delta T^{*}H}$:
 
 $$
 \begin{align}
@@ -124,7 +124,7 @@ Boundary condition:
 $$\boldsymbol{u}=\theta=0, \quad \partial_z \Phi = 0$$ -->
 
 - Stress-free (optional, `'stress-free'=True` in `params`)  at bottom and top sides:
-- 
+
 $$w=\theta=0, \quad \partial_z(u,v) = 0, \quad \partial_z \Phi = 0$$
 
 In 2D case, $\Phi$ will be removed.
