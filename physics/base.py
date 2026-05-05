@@ -152,7 +152,13 @@ class FluidModel:
         elif name == 'Ly' and len(self.bounds) == 3:
             rebuild_domain = True
             self.bounds = (self.bounds[0], value, self.bounds[2])
-            return True
+        
+        elif name == 'Aspect' and len(self.bounds) == 3:
+            rebuild_domain = True
+            if len(self.bounds) == 2: # If 2D (Lx, Lz)
+                self.bounds = (value, self.bounds[1])
+            elif len(self.bounds) == 3: # If 3D (Lx, Ly, Lz)
+                self.bounds = (value, value, self.bounds[2])
 
         elif name == 'Lz':
             rebuild_domain = True
@@ -425,6 +431,8 @@ class FluidModel:
                 self.preview_ax.set_ylabel('z')
                 self.preview_fig.colorbar(self.preview_im)
                 # self.preview_ax.set_title("Salt Concentration") 
+                self.preview_fig.canvas.draw()
+                self.preview_fig.canvas.flush_events()  
             else:
                 self.preview_im.set_array(data_g.T.ravel())
                 v_min, v_max = np.min(data_g), np.max(data_g)
