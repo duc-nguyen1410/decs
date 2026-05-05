@@ -250,21 +250,19 @@ class FluidModel:
             field.load_from_global_grid_data(data)
             cursor += size
 
-    def save_state(self, filename, format='h5'):
+    def save_state(self, filename):
         """
         Save dealias-scaled grid data to a file
         """
         import os
         import h5py
-        try:
-            import netCDF4 as nc
-        except ImportError:
-            nc = None
+        
         target_dir = os.path.dirname(filename)
         if self.dist.comm.rank == 0:
             if target_dir and not os.path.exists(target_dir):
                 os.makedirs(target_dir)
         self.dist.comm.Barrier() # Wait for directory to exist before writing
+        ext = os.path.splitext(filename)[1].lower()
 
         gathered_data = {}
         for field in self.state_fields:
@@ -273,7 +271,7 @@ class FluidModel:
 
         if self.dist.comm.rank == 0:
             # --- HDF5 Path ---
-            if format == 'h5':
+            if ext == '.h5':
                 with h5py.File(filename, mode='w') as f:
                     for name, data in gathered_data.items():
                         field_obj = next(obj for obj in self.state_fields if obj.name == name)
@@ -302,8 +300,10 @@ class FluidModel:
                     f.attrs['dim'] = self.dim
             
             # --- NetCDF Path ---
-            elif format == 'nc':
-                if nc is None:
+            elif ext == '.nc':
+                try:
+                    import netCDF4 as nc
+                except ImportError:
                     raise ImportError("netCDF4 library is required for .nc output.")
                 
                 with nc.Dataset(filename, mode='w', format='NETCDF4') as ds:
@@ -336,35 +336,57 @@ class FluidModel:
         """
         Load dealias-scaled grid data from a file
         """
+        import os
         logger.info(f"Loading state from {filename}")
+        ext = os.path.splitext(filename)[1].lower()
         
-        with h5py.File(filename, mode='r') as f:
-            # current_shape = self.get_grid_shape() # (Nx, [Ny], Nz)
-
-            for field in self.state_fields:
-                # Check if this field is a Vector or Scalar
-                is_vector = len(field.tensorsig) > 0
-                
-                if is_vector:
-                    # Reconstruct the multi-component array (e.g., 2, Nx, Nz)
-                    # We check how many components the field expects
-                    num_comp = self.dim 
+        if ext == '.h5':
+            # --- HDF5 Loading Logic ---
+            with h5py.File(filename, mode='r') as f:
+                # current_shape = self.get_grid_shape() # (Nx, [Ny], Nz)
+                for field in self.state_fields:
+                    # Check if this field is a Vector or Scalar
+                    is_vector = len(field.tensorsig) > 0
+                    if is_vector:
+                        # Reconstruct the multi-component array (e.g., 2, Nx, Nz)
+                        # We check how many components the field expects
+                        num_comp = self.dim 
+                        # Get the shape of one component to initialize the buffer
+                        comp_shape = f[f'{field.name}_0'].shape
+                        data = np.zeros((num_comp,) + comp_shape)
+                        for i in range(num_comp):
+                            data[i] = f[f'{field.name}_{i}'][:]
+                    else:
+                        # Scalar field (e.g., te, sa)
+                        data = f[field.name][:]
+                    # Load the gathered data into the distributed field
+                    # Dedalus handles the distribution to different MPI ranks automatically
+                    field.load_from_global_grid_data(data)
+        elif ext == '.nc':
+            # --- NetCDF Loading Logic ---
+            try:
+                import netCDF4 as nc
+            except ImportError:
+                raise ImportError("netCDF4 library is required to load .nc files.")
+            
+            with nc.Dataset(filename, mode='r') as ds:
+                for field in self.state_fields:
+                    is_vector = len(field.tensorsig) > 0
+                    if is_vector:
+                        num_comp = self.dim
+                        # Reconstruct vector data
+                        # Shapes in .nc are (Nx, [Ny], Nz) because we renamed labels, not data
+                        comp_shape = ds.variables[f'{field.name}_0'].shape
+                        data = np.zeros((num_comp,) + comp_shape)
+                        for i in range(num_comp):
+                            data[i] = ds.variables[f'{field.name}_{i}'][:]
+                    else:
+                        # Scalar field
+                        data = ds.variables[field.name][:]
                     
-                    # Get the shape of one component to initialize the buffer
-                    comp_shape = f[f'{field.name}_0'].shape
-                    data = np.zeros((num_comp,) + comp_shape)
-                    
-                    for i in range(num_comp):
-                        data[i] = f[f'{field.name}_{i}'][:]
-                else:
-                    # Scalar field (e.g., te, sa)
-                    data = f[field.name][:]
-                
-                # Load the gathered data into the distributed field
-                # Dedalus handles the distribution to different MPI ranks automatically
-                field.load_from_global_grid_data(data)
-                
-        logger.info("State loaded successfully.")
+                    field.load_from_global_grid_data(data)
+        else:
+            raise ValueError(f"Unsupported file extension: {ext}")  
 
     def set_initial_conditions(self,mode = 'random', scale=1e-3):
         """
