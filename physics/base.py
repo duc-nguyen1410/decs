@@ -332,6 +332,8 @@ class FluidModel:
                         else:
                             var = ds.createVariable(name, 'f8', tuple(coord_names))
                             var[:] = data
+            else:
+                raise ValueError(f"Unsupported file extension: {ext}")  
     def load_state(self, filename):
         """
         Load dealias-scaled grid data from a file
