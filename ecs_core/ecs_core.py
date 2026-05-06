@@ -10,7 +10,7 @@ from mpi4py import MPI
 logging.getLogger('solvers').setLevel(logging.WARNING)
 logging.getLogger('subsystems').setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
-# from ..physics import Symmetry
+
 class ECSSolver:
     def __init__(self, model, params=None):
         self.model = model
@@ -324,12 +324,10 @@ class ECSSolver:
                     Rzsearch=False,
                     Tp=0.02, 
                     ax = 0.0, 
-                    az = 0.0,
-                    dt = 2e-4):
+                    az = 0.0):
         self.Tsearch = Tsearch
         self.Rxsearch = Rxsearch
         self.Rzsearch = Rzsearch
-        self.model.init_dt = dt
         self.Tp = Tp
         N_ = self.model.size()
         if self.model.dist.comm.rank == 0:
@@ -344,7 +342,7 @@ class ECSSolver:
         xi_pert = np.zeros_like(xi)
         success = False
         for i in range(self.max_iter):
-            logger.info("\n")
+            # logger.info("\n")
             self.model.set_state(xi[:N_])
             self.model.save_state(self.odir + 'solution_temp.h5')
             self.model.preview()
