@@ -36,6 +36,8 @@ class ECSSolver:
         self.projectNeutralDrift = params['projectNeutralDrift'] if params and 'projectNeutralDrift' in params else True
         self.computeStability = params['computeStability'] if params and 'computeStability' in params else False
         self.Neigen = params['Neigen'] if params and 'Neigen' in params else 50
+        # save updates of solution during the Newton iteration
+        self.save_ecs_history = params['save_ecs_history'] if params and 'save_ecs_history' in params else False
 
     def G(self, x0, Tp, ax=0, az=0):
         ''' Return sigma(ax, az)*F^Tp(x0) '''
@@ -344,7 +346,12 @@ class ECSSolver:
         for i in range(self.max_iter):
             # logger.info("\n")
             self.model.set_state(xi[:N_])
-            self.model.save_state(self.odir + 'solution_temp.h5')
+            if self.save_ecs_history:
+                # save the solution at each iteration for post-analysis of the convergence process if needed
+                self.model.save_state(self.odir + f'solution_{i}.h5')
+            else:
+                # save a temporary solution at each iteration for debugging purposes or restarting if needed
+                self.model.save_state(self.odir + 'solution_temp.h5')
             self.model.preview()
             nonlinear_res = self.NonlinearOperator(xi)
             norm_b = np.linalg.norm(nonlinear_res)
