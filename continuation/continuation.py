@@ -73,9 +73,10 @@ class Continuation:
         
         self.ECSSolver.odir = self.odir + f'search-{self.isearch}/'
         self.ECSSolver.model.odir = self.ECSSolver.odir # update this for saving time-dependent solution later
+        
         # Call your solver's main execution method
         result = self.ECSSolver.NewtonSolver(x0=x_guess,Tp=self.Tp,ax=self.ax,az=self.az)
-
+        
         self.isearch += 1
         return result
 
@@ -87,13 +88,18 @@ class Continuation:
             if not file_exists:
                 with open(file_path, mode='w') as header:
                     # Write header if file is new
-                    header_line = f"{self.mu_name}, " + ", ".join(keys)
+                    header_line = f"{self.mu_name}, " + ", ".join(keys) + ", dir"
                     header.write(header_line + "\n")
             with open(file_path, mode='a') as f:
                 # Append data
                 values = [f"{mu:.12f}"] + [f"{float(properties[k]):.12f}" for k in keys]
-                f.write(", ".join(values) + "\n")
-    
+                f.write(", ".join(values) + f", search-{self.isearch-1}/\n")
+    def save_mu(self,mu):
+        if self.ECSSolver.model.dist.comm.rank == 0:
+            file_path = os.path.join(self.ECSSolver.odir, "mu.txt")
+            # print(file_path)
+            with open(file_path, mode='w') as file:
+                file.write(f"{mu}")
     def arc_length_continuation(self, mu_start, dmu, n_steps=50, mu_target=None):
         """Pseudo-arclength loop using direct class calls."""
         N_ = self.ECSSolver.model.size()
@@ -113,6 +119,9 @@ class Continuation:
                 raise RuntimeError(f"Failed to initialize continuation at mu={current_mu}")
             logger.info(f"Search {self.isearch-1}: Success | {self.mu_name} = {current_mu:.6f} | Res = {res:.2e}")
             
+            # save current mu
+            self.save_mu(current_mu)
+
             self.save_flow_properties(current_mu, properties)
 
             self.mu_history.append(current_mu)
@@ -149,7 +158,9 @@ class Continuation:
             sol, success, res, norm, properties = self.step_continuation(x_pred, mu_pred)
             
             if success:
-                self.save_flow_properties(current_mu, properties)
+                # save current mu
+                self.save_mu(mu_pred)
+                self.save_flow_properties(mu_pred, properties)
 
                 self.mu_history.append(mu_pred)
                 self.x_history.append(sol.copy())
