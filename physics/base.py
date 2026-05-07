@@ -27,8 +27,8 @@ class FluidModel:
         self.z_basis = None
         self.all_bases = None
         self.create_domain()
-        self.init_dt = params['init_dt'] if params and 'init_dt' in params else 2e-4
-        self.odir = params['odir'] if params and 'odir' in params else "sim_output/"
+        self.init_dt = (params or {}).get('init_dt', 2e-4)
+        self.odir = (params or {}).get('odir', "sim_output/")
 
         # Registry: Newton solver will see [u, ...]
         self.state_fields = []
@@ -419,7 +419,7 @@ class FluidModel:
         """
         self.CFL = de.CFL(solver, initial_dt=initial_dt, cadence=cadence, safety=safety, threshold=threshold, 
                           max_change=max_change, min_change=min_change, max_dt=max_dt)
-        self.CFL.add_velocity(self.u)
+        self.CFL.add_velocity(self.state_fields[0]) # Assuming the first field is velocity; adjust if needed
 
     def set_snapshots(self, solver, sim_dt=10.0, max_writes=1000, file_handler_mode = 'overwrite'):
         """

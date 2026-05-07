@@ -30,24 +30,24 @@ class Continuation:
     def __init__(self, ECSSolver, params=None):
         self.ECSSolver = ECSSolver
         # main settings
-        self.mu_name = params['mu_name'] if params and 'mu_name' in params else 1
-        self.odir = params['odir'] if params and 'odir' in params else './'
-        self.Tsearch = params['Tsearch'] if params and 'Tsearch' in params else False
-        self.Rxsearch = params['Rxsearch'] if params and 'Rxsearch' in params else False
-        self.Rzsearch = params['Rzsearch'] if params and 'Rzsearch' in params else False
-        self.Tp = params['Tp'] if params and 'Tp' in params else 1.0
-        self.ax = params['ax'] if params and 'ax' in params else 0.0
-        self.ay = params['ay'] if params and 'ay' in params else 0.0
-        self.az = params['az'] if params and 'az' in params else 0.0
+        self.mu_name = (params or {}).get('mu_name', 'Lx') #
+        self.odir = (params or {}).get('odir', './')
+        self.Tsearch = (params or {}).get('Tsearch', False)
+        self.Rxsearch = (params or {}).get('Rxsearch', False)
+        self.Rzsearch = (params or {}).get('Rzsearch', False)
+        self.Tp = (params or {}).get('Tp', 1.0)
+        self.ax = (params or {}).get('ax', 0.0)
+        self.ay = (params or {}).get('ay', 0.0)
+        self.az = (params or {}).get('az', 0.0)
         # sub-parameter
-        self.mu_ref = params['mu_ref'] if params and 'mu_ref' in params else 1
-        self.ds_min = params['ds_min'] if params and 'ds_min' in params else 1e-4
-        self.ds_max = params['ds_max'] if params and 'ds_max' in params else 0.01
-        self.guess_error_min = params['guess_error_min'] if params and 'guess_error_min' in params else 0.1   # acceptable *lower* bound for guesserr
-        self.guess_error_max = params['guess_error_max'] if params and 'guess_error_max' in params else 10.0   # acceptable *upper* bound for guesserr
+        self.mu_ref = (params or {}).get('mu_ref', 1)
+        self.ds_min = (params or {}).get('ds_min', 1e-4)
+        self.ds_max = (params or {}).get('ds_max', 0.01)
+        self.guess_error_min = (params or {}).get('guess_error_min', 0.1)   # acceptable *lower* bound for guesserr
+        self.guess_error_max = (params or {}).get('guess_error_max', 10.0)   # acceptable *upper* bound for guesserr
         self.guesserrtarget = np.sqrt(self.guess_error_min * self.guess_error_max) # target guess error for adjusting ds
-        self.predictor = params['predictor'] if params and 'predictor' in params else 'tangent' # 'quadratic' or 'tangent'
-        self.Ndsadjust = params['Ndsadjust'] if params and 'Ndsadjust' in params else 5 # number of steps to wait before adjusting ds
+        self.predictor = (params or {}).get('predictor', 'tangent') # 'quadratic' or 'tangent'
+        self.Ndsadjust = (params or {}).get('Ndsadjust', 5) # number of steps to wait before adjusting ds
         # History for arclength
         self.isearch = 0
         self.mu_history = []

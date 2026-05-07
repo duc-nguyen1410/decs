@@ -15,29 +15,29 @@ class ECSSolver:
     def __init__(self, model, params=None):
         self.model = model
         #
-        self.Tsearch = params['Tsearch'] if params and 'Tsearch' in params else False
-        self.Rxsearch = params['Rxsearch'] if params and 'Rxsearch' in params else False
-        self.Rzsearch = params['Rzsearch'] if params and 'Rzsearch' in params else False
+        self.Tsearch = (params or {}).get('Tsearch', False)
+        self.Rxsearch = (params or {}).get('Rxsearch', False)
+        self.Rzsearch = (params or {}).get('Rzsearch', False)
         # Set default parameters for the solver
-        self.odir = params['odir'] if params and 'odir' in params else 'ecs_output/'
+        self.odir = (params or {}).get('odir', 'ecs_output/')
         self.model.odir = self.odir
-        self.tol = params['tol'] if params and 'tol' in params else 1e-8
-        self.max_iter = params['max_iter'] if params and 'max_iter' in params else 20
-        self.Tp = params['Tp'] if params and 'Tp' in params else 0.2
+        self.tol = (params or {}).get('tol', 1e-8)
+        self.max_iter = (params or {}).get('max_iter', 20)
+        self.Tp = (params or {}).get('Tp', 0.2)
         #
-        self.d_tol = params['d_tol'] if params and 'd_tol' in params else 1e-7
-        self.gmres_min_error = params['gmres_min_error'] if params and 'gmres_min_error' in params else 1e-3
-        self.trust_radius_min = params['trust_radius_min'] if params and 'trust_radius_min' in params else 1e-4
-        self.trust_radius = params['trust_radius'] if params and 'trust_radius' in params else 1.0
+        self.d_tol = (params or {}).get('d_tol', 1e-7)
+        self.gmres_min_error = (params or {}).get('gmres_min_error', 1e-3)
+        self.trust_radius_min = (params or {}).get('trust_radius_min', 1e-4)
+        self.trust_radius = (params or {}).get('trust_radius', 1.0)
         #
-        self.krylov_dim = params['krylov_dim'] if params and 'krylov_dim' in params else 50
-        self.krylov_dim_min = params['krylov_dim_min'] if params and 'krylov_dim_min' in params else 20
+        self.krylov_dim = (params or {}).get('krylov_dim', 50)
+        self.krylov_dim_min = (params or {}).get('krylov_dim_min', 20)
         # stability
-        self.projectNeutralDrift = params['projectNeutralDrift'] if params and 'projectNeutralDrift' in params else True
-        self.computeStability = params['computeStability'] if params and 'computeStability' in params else False
-        self.Neigen = params['Neigen'] if params and 'Neigen' in params else 50
+        self.projectNeutralDrift = (params or {}).get('projectNeutralDrift', True)
+        self.computeStability = (params or {}).get('computeStability', False)
+        self.Neigen = (params or {}).get('Neigen', 50)
         # save updates of solution during the Newton iteration
-        self.save_ecs_history = params['save_ecs_history'] if params and 'save_ecs_history' in params else False
+        self.save_ecs_history = (params or {}).get('save_ecs_history', False)
 
     def G(self, x0, Tp, ax=0, az=0):
         ''' Return sigma(ax, az)*F^Tp(x0) '''
@@ -352,7 +352,7 @@ class ECSSolver:
             else:
                 # save a temporary solution at each iteration for debugging purposes or restarting if needed
                 self.model.save_state(self.odir + 'solution_temp.h5')
-            self.model.preview()
+            # self.model.preview()
             nonlinear_res = self.NonlinearOperator(xi)
             norm_b = np.linalg.norm(nonlinear_res)
             self.save_flow_properties(xi)
