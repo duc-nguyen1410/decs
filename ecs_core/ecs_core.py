@@ -26,7 +26,7 @@ class ECSSolver:
         self.Tp = (params or {}).get('Tp', 0.2)
         #
         self.d_tol = (params or {}).get('d_tol', 1e-7)
-        self.gmres_min_error = (params or {}).get('gmres_min_error', 1e-3)
+        self.gmres_min_error = (params or {}).get('gmres_min_error', 1e-10)
         self.trust_radius_min = (params or {}).get('trust_radius_min', 1e-4)
         self.trust_radius = (params or {}).get('trust_radius', 1.0)
         #
