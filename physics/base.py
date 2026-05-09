@@ -1,6 +1,7 @@
 import numpy as np
 import dedalus.public as de
 import h5py
+from mpi4py import MPI
 import matplotlib.pyplot as plt
 import logging
 logger = logging.getLogger(__name__)
@@ -539,6 +540,7 @@ class FluidModel:
         Solve eigenvalue problem using Dedalus's EVP with a base state 'x0'. 
         Finding N eigenmodes near to target eigenvalue.
         """
+        MPI.COMM_WORLD.Barrier()
         solver = self.evp_problem.build_solver()
         self.set_eq_state(x0)
         solver.solve_sparse(solver.subproblems[0], N=N, target=target)
@@ -570,6 +572,7 @@ class FluidModel:
             plt.show(block=True)
             
     def F_Tp(self, x0, Tp):
+        MPI.COMM_WORLD.Barrier()
         solver = self.ivp_problem.build_solver(de.RK222)
         self.set_state(x0)
         solver.stop_sim_time = Tp
@@ -584,6 +587,7 @@ class FluidModel:
             solver.step(dt)
         return self.get_state()
     def save_time_dependent_solution(self, x0, Tp, ax=0, az=0):
+        MPI.COMM_WORLD.Barrier()
         solver = self.ivp_problem.build_solver(de.RK222)
         self.set_state(x0)
 
@@ -615,6 +619,7 @@ class FluidModel:
 
     
     def t_derivative(self, x, delta_T):
+        MPI.COMM_WORLD.Barrier()
         # Return dF/dt
         solver = self.ivp_problem.build_solver(de.RK222)
         self.set_state(x)
