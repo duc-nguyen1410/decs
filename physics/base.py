@@ -23,13 +23,11 @@ class FluidModel:
         self.dealias = dealias
         self.coords = None
         self.dist = None
-        # self.x_basis = None
-        # self.y_basis = None
-        # self.z_basis = None
         self.bases = None
-        # self.create_domain()
+
         self.init_dt = (params or {}).get('init_dt', 2e-4)
         self.odir = (params or {}).get('odir', "sim_output/")
+        self.ext = (params or {}).get('ext', 'nc')
 
         # Registry: Newton solver will see [u, ...]
         self.fields = []
@@ -174,13 +172,13 @@ class FluidModel:
         """
         import os
         import h5py
-        
+        filename = filename + self.ext
         target_dir = os.path.dirname(filename)
         if self.dist.comm.rank == 0:
             if target_dir and not os.path.exists(target_dir):
                 os.makedirs(target_dir)
         self.dist.comm.Barrier() # Wait for directory to exist before writing
-        ext = os.path.splitext(filename)[1].lower()
+        # ext = os.path.splitext(filename)[1].lower()
 
         gathered_data = {}
         for field in self.fields:
@@ -189,7 +187,7 @@ class FluidModel:
 
         if self.dist.comm.rank == 0:
             # --- HDF5 Path ---
-            if ext == '.h5':
+            if self.ext == '.h5':
                 with h5py.File(filename, mode='w') as f:
                     for name, data in gathered_data.items():
                         field_obj = next(obj for obj in self.fields if obj.name == name)
@@ -217,7 +215,7 @@ class FluidModel:
                     f.attrs['dim'] = self.dim
             
             # --- NetCDF Path ---
-            elif ext == '.nc':
+            elif self.ext == '.nc':
                 try:
                     import netCDF4 as nc
                 except ImportError:
@@ -227,6 +225,9 @@ class FluidModel:
                     ds.dim_attr = self.dim
                     coords = [basis.global_grid(self.dist, scale=self.dealias) for basis in self.bases]
                     coord_names = [basis.coord.name for basis in self.bases]
+                    # We reverse the coord_names for ParaView so the last dim is X
+                    coords = tuple(reversed(coords))
+                    coord_names = tuple(reversed(coord_names))
                     
                     for c_name, g_data in zip(coord_names, coords):
                         # g_data is often 2D/3D from global_grid; we take the 1D slice
@@ -243,22 +244,23 @@ class FluidModel:
                         if len(field_obj.tensorsig) > 0: # is vector
                             for i in range(data.shape[0]):
                                 var = ds.createVariable(f'{name}_{i}', 'f8', tuple(coord_names))
-                                var[:] = data[i]
+                                var[:] = data[i].T
                                 # print(np.shape(data[i]))
                         else:
                             var = ds.createVariable(name, 'f8', tuple(coord_names))
-                            var[:] = data
+                            var[:] = data.T
             else:
-                raise ValueError(f"Unsupported file extension: {ext}")  
+                raise ValueError(f"Unsupported file extension: {self.ext}")  
     def load_state(self, filename):
         """
         Load dealias-scaled grid data from a file
         """
         import os
+        filename = filename + self.ext
         logger.info(f"Loading state from {filename}")
-        ext = os.path.splitext(filename)[1].lower()
+        # ext = os.path.splitext(filename)[1].lower()
         
-        if ext == '.h5':
+        if self.ext == '.h5':
             # --- HDF5 Loading Logic ---
             with h5py.File(filename, mode='r') as f:
                 # current_shape = self.get_grid_shape() # (Nx, [Ny], Nz)
@@ -280,7 +282,7 @@ class FluidModel:
                     # Load the gathered data into the distributed field
                     # Dedalus handles the distribution to different MPI ranks automatically
                     field.load_from_global_grid_data(data)
-        elif ext == '.nc':
+        elif self.ext == '.nc':
             # --- NetCDF Loading Logic ---
             try:
                 import netCDF4 as nc
@@ -297,14 +299,14 @@ class FluidModel:
                         comp_shape = ds.variables[f'{field.name}_0'].shape
                         data = np.zeros((num_comp,) + comp_shape)
                         for i in range(num_comp):
-                            data[i] = ds.variables[f'{field.name}_{i}'][:]
+                            data[i] = ds.variables[f'{field.name}_{i}'][:].T
                     else:
                         # Scalar field
-                        data = ds.variables[field.name][:]
+                        data = ds.variables[field.name][:].T
                     
                     field.load_from_global_grid_data(data)
         else:
-            raise ValueError(f"Unsupported file extension: {ext}")  
+            raise ValueError(f"Unsupported file extension: {self.ext}")  
 
     def set_initial_conditions(self,mode = 'random', scale=1e-3):
         """ Set initial condition for each field """
