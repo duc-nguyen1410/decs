@@ -33,7 +33,7 @@ class ECSSolver:
         self.krylov_dim = (params or {}).get('krylov_dim', 50)
         self.krylov_dim_min = (params or {}).get('krylov_dim_min', 20)
         # stability
-        self.projectNeutralDrift = (params or {}).get('projectNeutralDrift', True)
+        self.projectNeutralDrift = (params or {}).get('projectNeutralDrift', False)
         self.computeStability = (params or {}).get('computeStability', False)
         self.Neigen = (params or {}).get('Neigen', 50)
         # save updates of solution during the Newton iteration
@@ -305,8 +305,8 @@ class ECSSolver:
                 # save residual
                 scipy.io.mmwrite(self.odir+'stability/residual.mtx', [res])
             
-            xg = self.model.x_basis.global_grid(self.model.dist, scale=self.model.dealias) 
-            zg = self.model.z_basis.global_grid(self.model.dist, scale=self.model.dealias)
+            coords = [basis.global_grid(self.model.dist, scale=self.model.dealias) for basis in self.model.bases]
+            coord_names = [basis.coord.name for basis in self.model.bases]
             unstable = np.where(growthrate.real > 0)[0]
             if MPI.COMM_WORLD.rank == 0 and unstable.size > 0:
                 eigenvectors_unstable = eigenvectors[:, unstable]
@@ -316,8 +316,8 @@ class ECSSolver:
                 h5f.create_dataset('/eigenvectors', data = eigenvectors_unstable) 
                 h5f.create_dataset('/eigenvalues', data = eigenvalues_unstable) 
                 h5f.create_dataset('/growthrate', data = growthrate_unstable) 
-                h5f.create_dataset('/xg', data = xg) 
-                h5f.create_dataset('/zg', data = zg) 
+                for c_name, g_data in zip(coord_names, coords):
+                    h5f.create_dataset(f'/{c_name}', data = g_data) 
                 h5f.close()
     def NewtonSolver(self, 
                     x0, 

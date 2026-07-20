@@ -1,6 +1,7 @@
 import dedalus.public as de
 import numpy as np
 import h5py
+import matplotlib.pyplot as plt
 from .base import FluidModel 
 
 class MagnetoConvection(FluidModel):
@@ -10,75 +11,143 @@ class MagnetoConvection(FluidModel):
         
         # Add additional fields
         # pressure p (scalar)
-        self.p = self.dist.Field(name='p', bases=self.all_bases)
+        self.p = None
         # velocity u (Vector)
-        self.u = self.dist.VectorField(self.coords, name='u', bases=self.all_bases)
-        self.u.change_scales(self.dealias)
-        self.u_eq = self.dist.VectorField(self.coords, name='u_eq', bases=self.all_bases)
+        self.u = None
+        self.u_eq = None
         # temperature \theta (scalar)
-        self.te = self.dist.Field(name='te', bases=self.all_bases)
-        self.te.change_scales(self.dealias)
-        self.te_eq = self.dist.Field(name='te_eq', bases=self.all_bases)
+        self.te = None
+        self.te_eq = None
         # electric potential \Phi (scalar)
-        self.Phi = self.dist.Field(name='Phi', bases=self.all_bases)
-        self.Phi.change_scales(self.dealias)
-        self.Phi_eq = self.dist.Field(name='Phi_eq', bases=self.all_bases)
+        self.Phi = None
+        self.Phi_eq = None
 
-        # Newton solver now sees [u, Phi, te], save 'te' as last element for preview if needed
-        if self.dim==3:
-            self.state_fields = [self.u, self.Phi, self.te] # for ECS
-            self.eq_fields = [self.u_eq, self.Phi_eq, self.te_eq] # for EVP
-        else: 
-            self.state_fields = [self.u, self.te] # for ECS
-            self.eq_fields = [self.u_eq, self.te_eq] # for EVP
-    def rebuild_fields(self):
+        self.create_domain()
+        self.build_fields()
+
+    def create_domain(self):
+        """ Creates a 2D or 3D domain/bases in the model """
+        if self.dim == 2:
+            Nx, Nz = self.sizes
+            Lx, Lz = self.bounds
+            self.coords = de.CartesianCoordinates('x', 'z')
+        elif self.dim == 3:
+            Nx, Ny, Nz = self.sizes
+            Lx, Ly, Lz = self.bounds
+            self.coords = de.CartesianCoordinates('x', 'y', 'z')
+        else:
+            raise ValueError("Sizes and bounds must be length 2 or 3.")
+        
+        if self.mode=='sim':
+            self.dist = de.Distributor(self.coords, dtype=np.float64)
+        else:
+            self.dist = de.Distributor(self.coords, dtype=np.complex128)
+
+        # Horizontal x-basis (Always periodic)
+        if self.mode=='sim':
+            x_basis = de.RealFourier(self.coords['x'], size=Nx, bounds=(0, Lx), dealias=self.dealias)
+        else:
+            x_basis = de.ComplexFourier(self.coords['x'], size=Nx, bounds=(0, Lx), dealias=self.dealias)
+        
+        # Only if 3D, Always periodic
+        if self.dim == 3:
+            if self.mode=='sim':
+                y_basis = de.RealFourier(self.coords['y'], size=Ny, bounds=(0, Ly), dealias=self.dealias)
+            else:
+                y_basis = de.ComplexFourier(self.coords['y'], size=Ny, bounds=(0, Ly), dealias=self.dealias)
+
+        if self.bounded:
+            # Use Chebyshev for bounded domains
+            z_basis = de.ChebyshevT(self.coords['z'], size=Nz, bounds=(0, Lz), dealias=self.dealias)
+        else:
+            # Use Fourier for fully periodic domains
+            if self.mode=='sim':
+                z_basis = de.RealFourier(self.coords['z'], size=Nz, bounds=(0, Lz), dealias=self.dealias)
+            else:
+                z_basis = de.ComplexFourier(self.coords['z'], size=Nz, bounds=(0, Lz), dealias=self.dealias)
+        
+        if self.dim == 2:
+            self.bases = (x_basis, z_basis)
+        else:
+            self.bases = (x_basis, y_basis, z_basis)
+        
+    def build_fields(self):
         # pressure p (scalar)
-        self.p = self.dist.Field(name='p', bases=self.all_bases)
+        self.p = self.dist.Field(name='p', bases=self.bases)
         # velocity u (Vector)
-        self.u = self.dist.VectorField(self.coords, name='u', bases=self.all_bases)
+        self.u = self.dist.VectorField(self.coords, name='u', bases=self.bases)
         self.u.change_scales(self.dealias)
-        self.u_eq = self.dist.VectorField(self.coords, name='u_eq', bases=self.all_bases)
+        self.u_eq = self.dist.VectorField(self.coords, name='u_eq', bases=self.bases)
         # temperature \theta (scalar)
-        self.te = self.dist.Field(name='te', bases=self.all_bases)
+        self.te = self.dist.Field(name='te', bases=self.bases)
         self.te.change_scales(self.dealias)
-        self.te_eq = self.dist.Field(name='te_eq', bases=self.all_bases)
+        self.te_eq = self.dist.Field(name='te_eq', bases=self.bases)
         # electric potential \Phi (scalar)
-        self.Phi = self.dist.Field(name='Phi', bases=self.all_bases)
+        self.Phi = self.dist.Field(name='Phi', bases=self.bases)
         self.Phi.change_scales(self.dealias)
-        self.Phi_eq = self.dist.Field(name='Phi_eq', bases=self.all_bases)
+        self.Phi_eq = self.dist.Field(name='Phi_eq', bases=self.bases)
 
         # Newton solver now sees [u, Phi, te], save 'te' as last element for preview if needed
         if self.dim==3:
-            self.state_fields = [self.u, self.Phi, self.te] # for ECS
+            self.fields = [self.u, self.Phi, self.te] # for ECS
             self.eq_fields = [self.u_eq, self.Phi_eq, self.te_eq] # for EVP
         else: 
-            self.state_fields = [self.u, self.te] # for ECS
+            self.fields = [self.u, self.te] # for ECS
             self.eq_fields = [self.u_eq, self.te_eq] # for EVP
+    
+    def preview(self):
+        """ Preview the current state using last field of the system. """
+        data_g = self.fields[-1].allgather_data('g').real
+        if self.dist.comm.rank == 0:
+            xaxis = self.bases[0].global_grid(self.dist, scale=self.dealias)
+            zaxis = self.bases[-1].global_grid(self.dist, scale=self.dealias)
+            if self.dim == 3:
+                data_g = data_g[:,0,:] # get a 2D slice
+            # Initialize the figure only once
+            if self.preview_fig is None:
+                plt.ion()  # Turn on interactive mode
+                self.preview_fig, self.preview_ax = plt.subplots(figsize=(4,3))
+                self.preview_im = self.preview_ax.pcolormesh(xaxis.ravel(), zaxis.ravel(), data_g.T, 
+                                             cmap='RdBu_r', shading='auto')
+                self.preview_ax.set_xlabel('x')
+                self.preview_ax.set_ylabel('z')
+                self.preview_fig.colorbar(self.preview_im)
+                # self.preview_ax.set_title("Salt Concentration") 
+                self.preview_fig.canvas.draw()
+                self.preview_fig.canvas.flush_events()  
+            else:
+                self.preview_im.set_array(data_g.T.ravel())
+                v_min, v_max = np.min(data_g), np.max(data_g)
+                self.preview_im.set_clim(vmin=v_min, vmax=v_max)
+                # self.preview_ax.set_title(f"Salt Concentration at time {self.sim_time:.2f}")
+                self.preview_fig.canvas.draw()
+                self.preview_fig.canvas.flush_events()  
     
 class BoundedQuasiStaticMagnetoConvection(MagnetoConvection):
     def build_problems(self):
         self.build_ivp_problem()
     def build_ivp_problem(self):
-        ns = self._get_base_namespace()
-        ns.update({'Ra':self.params['Ra'],
-                   'Pr':self.params['Pr'],
-                   'Q':self.params['Q']})
         tau_p = self.dist.Field(name='tau_p')
-        tau_u1 = self.dist.VectorField(self.coords, name='tau_u1', bases=self.all_bases[:-1])
-        tau_te1 = self.dist.Field(name='tau_te1', bases=self.all_bases[:-1])
-        tau_u2 = self.dist.VectorField(self.coords, name='tau_u2', bases=self.all_bases[:-1])
-        tau_te2 = self.dist.Field(name='tau_te2', bases=self.all_bases[:-1])
+        tau_u1 = self.dist.VectorField(self.coords, name='tau_u1', bases=self.bases[:-1])
+        tau_te1 = self.dist.Field(name='tau_te1', bases=self.bases[:-1])
+        tau_u2 = self.dist.VectorField(self.coords, name='tau_u2', bases=self.bases[:-1])
+        tau_te2 = self.dist.Field(name='tau_te2', bases=self.bases[:-1])
         # Phi only needed for 3D or specific 2.5D setups
         if self.dim == 3:
-            tau_Phi1 = self.dist.Field(name='tau_Phi1', bases=self.all_bases[:-1])
-            tau_Phi2 = self.dist.Field(name='tau_Phi2', bases=self.all_bases[:-1])
+            tau_Phi1 = self.dist.Field(name='tau_Phi1', bases=self.bases[:-1])
+            tau_Phi2 = self.dist.Field(name='tau_Phi2', bases=self.bases[:-1])
             tau_Phi_gauge = self.dist.Field(name='tau_Phi_gauge')
         
-        lift_basis = self.z_basis.derivative_basis(1)
+        unit_vectors = self.coords.unit_vector_fields(self.dist)
+        if self.dim == 2:
+            ex, ez = unit_vectors
+            ey = None # Or a zero-field if needed
+        else:
+            ex, ey, ez = unit_vectors
+        
+        lift_basis = self.bases[-1].derivative_basis(1)
         lift = lambda A: de.Lift(A, lift_basis, -1)
 
-        ex = ns['ex']
-        ez = ns['ez']
         grad_u = de.grad(self.u) + ez*lift(tau_u1) 
         grad_te = de.grad(self.te) + ez*lift(tau_te1) 
         lap_u = de.div(grad_u)
@@ -100,13 +169,19 @@ class BoundedQuasiStaticMagnetoConvection(MagnetoConvection):
         dx = lambda A: de.Differentiate(A, self.coords['x']) 
         dz = lambda A: de.Differentiate(A, self.coords['z'])
 
-        ns.update({'np': np,
-                   'grad_u': grad_u, 'grad_te': grad_te,
-                   'lap_u': lap_u, 'lap_te': lap_te, 
-                   'dx': dx, 'dz': dz,
-                   'lift': lift,
-                   'Lorentz_force': Lorentz_force
-                   })
+        ns = {'np': np,
+              'Ra':self.params['Ra'],
+              'Pr':self.params['Pr'],
+              'Q':self.params['Q'],
+              'ex': ex, 'ey': ey, 'ez': ez,
+              'ux': self.u @ ex,
+              'w': self.u @ ez,
+              'grad_u': grad_u, 'grad_te': grad_te,
+              'lap_u': lap_u, 'lap_te': lap_te, 
+              'dx': dx, 'dz': dz,
+              'lift': lift,
+              'Lorentz_force': Lorentz_force
+             }
         # Variable List
         vars = [self.p, self.u, self.te, 
                 tau_p, tau_u1, tau_te1, 
@@ -146,6 +221,23 @@ class BoundedQuasiStaticMagnetoConvection(MagnetoConvection):
             self.ivp_problem.add_equation("dz(Phi)(z='left') = 0")
             self.ivp_problem.add_equation("dz(Phi)(z='right') = 0")
     
-class QuasiStaticMagnetoConvection_Assatz(MagnetoConvection):
-    def get_IVP(self):
-        pass
+    # def get_flow_properties(self):
+    #     ez = self.coords.unit_vector_fields(self.dist)[-1]
+    #     w = self.w
+    #     Ra = self.params['Ra']
+    #     Pr = self.params['Pr']
+    #     Q = self.params['Q']
+    #     #
+    #     z, = self.dist.local_grids(self.bases[-1])
+        
+    #     dz = lambda A: de.Differentiate(A, self.coords['z']) 
+    #     h_mean = lambda A: de.Average(A,'x')
+    #     # Nusselt number
+    #     Nu_p = 1-dz(self.T0)(z=0) # plane Nusselt number
+    #     # .evaluate() returns a field object
+    #     # ['g'] accesses the grid data
+    #     Nu_p_val = Nu_p.evaluate()['g'].real
+    #     if self.dist.comm.rank == 0:
+    #         return {'Nu_p': float(Nu_p_val)}
+    #     else:
+    #         return None
