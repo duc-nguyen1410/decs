@@ -221,23 +221,29 @@ class BoundedQuasiStaticMagnetoConvection(MagnetoConvection):
             self.ivp_problem.add_equation("dz(Phi)(z='left') = 0")
             self.ivp_problem.add_equation("dz(Phi)(z='right') = 0")
     
-    # def get_flow_properties(self):
-    #     ez = self.coords.unit_vector_fields(self.dist)[-1]
-    #     w = self.w
-    #     Ra = self.params['Ra']
-    #     Pr = self.params['Pr']
-    #     Q = self.params['Q']
-    #     #
-    #     z, = self.dist.local_grids(self.bases[-1])
+    def get_flow_properties(self):
+        # ez = self.coords.unit_vector_fields(self.dist)[-1]
+        # w = self.w
+        # Ra = self.params['Ra']
+        # Pr = self.params['Pr']
+        # Q = self.params['Q']
+        #
+        z, = self.dist.local_grids(self.bases[-1])
         
-    #     dz = lambda A: de.Differentiate(A, self.coords['z']) 
-    #     h_mean = lambda A: de.Average(A,'x')
-    #     # Nusselt number
-    #     Nu_p = 1-dz(self.T0)(z=0) # plane Nusselt number
-    #     # .evaluate() returns a field object
-    #     # ['g'] accesses the grid data
-    #     Nu_p_val = Nu_p.evaluate()['g'].real
-    #     if self.dist.comm.rank == 0:
-    #         return {'Nu_p': float(Nu_p_val)}
-    #     else:
-    #         return None
+        dz = lambda A: de.Differentiate(A, self.coords['z']) 
+        h_mean = lambda A: de.Average(A,'x')
+        # [1] plane Nusselt number
+        Nu_p = 1-h_mean(dz(self.te))(z=0) # plane Nusselt number
+        # [2] volume average
+        L2_temp = np.sqrt(de.Average(self.te**2))
+        # [3] 
+        # .evaluate() returns a field object
+        # ['g'] accesses the grid data
+        Nu_p_val = Nu_p.evaluate()['g'].real
+        L2_temp_val = L2_temp.evaluate()['g'].real
+        # print("shape of Nu_p", np.shape(Nu_p_val))
+        if self.dist.comm.rank == 0:
+            return {'Nu_p': float(Nu_p_val),
+                    'L2_temp': float(L2_temp_val)}
+        else:
+            return None

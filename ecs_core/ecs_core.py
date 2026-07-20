@@ -256,7 +256,7 @@ class ECSSolver:
                 f.write(", ".join(values) + "\n")
             
             # Also print to terminal for real-time monitoring
-            prop_strings = [f"{k}={float(properties[k]):.12f}" for k in keys]
+            prop_strings = [f"{k}={float(properties[k]):.6f}" for k in keys]
             logger.info(f"Prop Check: {' | '.join(prop_strings)}")
     def stability(self,x):
         nonlinear_res = self.NonlinearOperator(x)
