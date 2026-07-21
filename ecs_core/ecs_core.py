@@ -348,10 +348,10 @@ class ECSSolver:
             self.model.set_state(xi[:N_])
             if self.save_ecs_history:
                 # save the solution at each iteration for post-analysis of the convergence process if needed
-                self.model.save_state(self.odir + f'solution_{i}.h5')
+                self.model.save_state(self.odir + f'solution_{i}')
             else:
                 # save a temporary solution at each iteration for debugging purposes or restarting if needed
-                self.model.save_state(self.odir + 'solution_temp.h5')
+                self.model.save_state(self.odir + 'solution_temp')
             # self.model.preview()
             nonlinear_res = self.NonlinearOperator(xi)
             norm_b = np.linalg.norm(nonlinear_res)
@@ -367,7 +367,7 @@ class ECSSolver:
                 success = True
                 # save the solution to an h5 file
                 self.model.set_state(xi[:N_])
-                self.model.save_state(self.odir + 'solution.h5')
+                self.model.save_state(self.odir + 'solution')
                 # save time-dependent data
                 if self.Tsearch or self.Rxsearch or self.Rzsearch:
                     self.model.save_time_dependent_solution(xi[:N_],
