@@ -513,6 +513,7 @@ class ShearedDiffusiveConvection(DoubleDiffusion):
               'tau':self.params['tau'],
               'Ri':self.params['Ri'],
               'ex': ex, 'ey': ey, 'ez': ez,
+              'ux': self.u @ ex,
               'w': self.u @ ez,
               'lift': lift,
               'grad_u': grad_u, 'grad_te': grad_te, 'grad_sa': grad_sa, 
