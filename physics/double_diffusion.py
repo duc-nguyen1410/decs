@@ -549,7 +549,7 @@ class ShearedDiffusiveConvection(DoubleDiffusion):
             self.ivp_problem.add_equation("u(z='right') = 0")
     def get_flow_properties(self):
         ez = self.coords.unit_vector_fields(self.dist)[-1]
-        w = self.u @ ez,
+        w = self.u @ ez
         Ra = self.params['Ra']
         Pr = self.params['Pr']
         tau = self.params['tau']
