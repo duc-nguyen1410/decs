@@ -161,8 +161,12 @@ class BoundedQuasiStaticMagnetoConvection(MagnetoConvection):
             J = - grad_Phi + de.cross(self.u, ez) # quasi-static MHD Ohm’s law
             Lorentz_force = de.cross(J, ez)
         else:
-            # In 2D (xz), u = (ux, w). u x ez = -ux*ey. 
-            # (u x ez) x ez = -ux*ex.
+            # In 2D (xz), u = (ux, 0, w) -> u x ez = -ux*ey
+            # J = grad_Phi + u x ez = grad_Phi -ux*ey
+            # By applying the charge conservation, we can get lap_Phi = 0
+            # Because we are using isulating B.C., it leads to grad_Phi = 0
+            # so, J = -ux*ey
+            # Lorentz_force = J x ez = -ux*ex.
             # This bypasses the need for the Phi Poisson equation entirely.
             Lorentz_force = - (self.u @ ex) * ex
 
