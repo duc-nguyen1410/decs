@@ -378,11 +378,17 @@ class FluidModel:
         solver.iteration = 0
         solver.stop_wall_time = np.inf
         solver.stop_iteration = np.inf
-        
-        num_steps = int(Tp/self.init_dt)
-        dt = Tp/num_steps
-        for i in range(num_steps):
-            solver.step(dt)
+        if self.CFL is not None:
+            while solver.proceed:
+                dt = self.CFL.compute_timestep()
+                if solver.sim_time + dt > Tp:
+                    dt = Tp - solver.sim_time
+                solver.step(dt)
+        else:
+            num_steps = int(Tp/self.init_dt)
+            dt = Tp/num_steps
+            for i in range(num_steps):
+                solver.step(dt)
         return self.get_state()
     def save_time_dependent_solution(self, x0, Tp, ax=0, az=0):
         MPI.COMM_WORLD.Barrier()
