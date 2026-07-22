@@ -535,46 +535,25 @@ class ShearedDiffusiveConvection(DoubleDiffusion):
         self.ivp_problem.add_equation("integ(te) = 0") 
         self.ivp_problem.add_equation("integ(sa) = 0") 
     def get_flow_properties(self):
-        return None
-        # ez = self.coords.unit_vector_fields(self.dist)[-1]
-        # w = self.u @ ez
-        # Ra = self.params['Ra']
-        # Pr = self.params['Pr']
-        # tau = self.params['tau']
-        # #
-        # z, = self.dist.local_grids(self.bases[-1])
-        # Lz = self.bases[-1].bounds[1]
-        # #
-        # # baru = self.dist.Field(bases=(self.bases[-1])) # base flow
-        # barT = self.dist.Field(bases=(self.bases[-1])) # base state of temperature: -y
-        # barS = self.dist.Field(bases=(self.bases[-1])) # base state of temperature: -y
-        # barT['g'] = -z
-        # barS['g'] = -z
-        # totT = barT + self.te
-        # totS = barS + self.sa
-        # dz = lambda A: de.Differentiate(A, self.coords['z']) 
-        # h_mean = lambda A: de.Average(A,'x')
-        # # Heat and salt fluxes
-        # Jt = -h_mean(dz(totT))(z=0)
-        # Js = -h_mean(dz(totS))(z=0)
-        # # Nusselt and Sherwood numbers 
-        # Nu = h_mean(np.sqrt(Pr*Ra)*w*totT - dz(totT))(z=Lz/2)
-        # Sh = h_mean(np.sqrt(Pr*Ra)/tau*w*totS - dz(totS))(z=Lz/2)
-        # # .evaluate() returns a field object
-        # # ['g'] accesses the grid data
-        # # Heat and salt fluxes
-        # Jt_val = Jt.evaluate()['g'].real
-        # Js_val = Js.evaluate()['g'].real
-        # # Nusselt and Sherwood numbers 
-        # Nu_val = Nu.evaluate()['g'].real
-        # Sh_val = Sh.evaluate()['g'].real
-        # if self.dist.comm.rank == 0:
-        #     return {'Jt': float(Jt_val),
-        #             'Js': float(Js_val),
-        #             'Nu': float(Nu_val),
-        #             'Sh': float(Sh_val)}
-        # else:
-        #     return None
+        ez = self.coords.unit_vector_fields(self.dist)[-1]
+        w = self.u @ ez
+        Pr = self.params['Pr']
+        Ra = self.params['Ra']
+        tau = self.params['tau']
+        # Nusselt and Sherwood numbers 
+        Nu = 1 + de.Average(w*self.te)*np.sqrt(Pr*Ra)
+        Sh = 1 + de.Average(w*self.sa)*np.sqrt(Pr*Ra)/tau
+        # .evaluate() returns a field object
+        # ['g'] accesses the grid data
+        # Nusselt and Sherwood numbers 
+        Nu_val = Nu.evaluate()['g'].real
+        Sh_val = Sh.evaluate()['g'].real
+        if self.dist.comm.rank == 0:
+            return {'Nu': float(Nu_val),
+                    'Sh': float(Sh_val)}
+        else:
+            return None
+        
 class WallShearedDiffusiveConvection(DoubleDiffusion):
     def build_problems(self):
         self.build_ivp_problem()
