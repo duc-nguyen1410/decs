@@ -468,6 +468,114 @@ class DiffusiveConvection(DoubleDiffusion):
             self.evp_problem.add_equation(f"integ({v}) = 0")
     
 class ShearedDiffusiveConvection(DoubleDiffusion):
+    ''' Thermohaline-shear instability in paper Radko (2019) '''
+    def build_problems(self):
+        self.build_ivp_problem()
+    def build_ivp_problem(self):
+        tau_p = self.dist.Field(name='tau_p')
+        tau_u = self.dist.VectorField(self.coords, name='tau_u') # velocity
+        tau_te = self.dist.Field(name='tau_te')
+        tau_sa = self.dist.Field(name='tau_sa')
+        
+        unit_vectors = self.coords.unit_vector_fields(self.dist)
+        if self.dim == 2:
+            ex, ez = unit_vectors
+            ey = None # Or a zero-field if needed
+        else:
+            ex, ey, ez = unit_vectors
+
+        grad_u = de.grad(self.u)
+        grad_te = de.grad(self.te)
+        grad_sa = de.grad(self.sa)
+        lap_u = de.div(grad_u)
+        lap_te = de.div(grad_te)
+        lap_sa = de.div(grad_sa)
+
+        dx = lambda A: de.Differentiate(A, self.coords['x']) 
+        dz = lambda A: de.Differentiate(A, self.coords['z']) 
+
+        baru = self.dist.Field(bases=self.bases[-1])
+        A_s = np.sqrt((self.params['Lambda']-1.0)/self.params['Ri'])
+        
+        z, = self.dist.local_grids(self.bases[-1])
+        baru['g'] = A_s*np.sin(2*np.pi*z)
+
+        ns = {'np': np,
+              'Ra':self.params['Ra'],
+              'Pr':self.params['Pr'],
+              'Lambda':self.params['Lambda'],
+              'tau':self.params['tau'],
+              'Ri':self.params['Ri'],
+              'ex': ex, 'ey': ey, 'ez': ez,
+              'ux': self.u @ ex,
+              'w': self.u @ ez,
+              'grad_u': grad_u, 'grad_te': grad_te, 'grad_sa': grad_sa, 
+              'lap_u': lap_u, 'lap_te': lap_te, 'lap_sa': lap_sa,
+              'dx': dx, 'dz': dz,
+              'baru': baru,
+             }
+        vars = [self.p, self.u, self.te, self.sa, 
+                tau_p, tau_u, tau_te, tau_sa]
+        # if self.params['stokes']:
+        #     vars.append(tau_u)
+        self.ivp_problem = de.IVP(vars, namespace=ns)
+        # Governing Equations
+        self.ivp_problem.add_equation("trace(grad_u) + tau_p = 0")
+        self.ivp_problem.add_equation("integ(p) = 0") 
+        if 'stokes' in self.params:
+            if self.params['stokes']:
+                self.ivp_problem.add_equation("grad(p) - np.sqrt(Pr/Ra)*lap_u - (te-Lambda*sa)*ez + tau_u = 0")
+            else:
+                self.ivp_problem.add_equation("dt(u) + baru*dx(u) + w*dz(baru)*ex + grad(p) - np.sqrt(Pr/Ra)*lap_u - (te-Lambda*sa)*ez + tau_u = - u@grad(u)")
+        else:
+            self.ivp_problem.add_equation("dt(u) + baru*dx(u) + w*dz(baru)*ex + grad(p) - np.sqrt(Pr/Ra)*lap_u - (te-Lambda*sa)*ez + tau_u = - u@grad(u)")
+        self.ivp_problem.add_equation("dt(te) + baru*dx(te) - (1.0/np.sqrt(Pr*Ra))*lap_te - w + tau_te = - u@grad(te)")
+        self.ivp_problem.add_equation("dt(sa) + baru*dx(sa) - (tau/np.sqrt(Pr*Ra))*lap_sa - w + tau_sa = - u@grad(sa)")
+        self.ivp_problem.add_equation("integ(u) = 0") 
+        self.ivp_problem.add_equation("integ(te) = 0") 
+        self.ivp_problem.add_equation("integ(sa) = 0") 
+    def get_flow_properties(self):
+        return None
+        # ez = self.coords.unit_vector_fields(self.dist)[-1]
+        # w = self.u @ ez
+        # Ra = self.params['Ra']
+        # Pr = self.params['Pr']
+        # tau = self.params['tau']
+        # #
+        # z, = self.dist.local_grids(self.bases[-1])
+        # Lz = self.bases[-1].bounds[1]
+        # #
+        # # baru = self.dist.Field(bases=(self.bases[-1])) # base flow
+        # barT = self.dist.Field(bases=(self.bases[-1])) # base state of temperature: -y
+        # barS = self.dist.Field(bases=(self.bases[-1])) # base state of temperature: -y
+        # barT['g'] = -z
+        # barS['g'] = -z
+        # totT = barT + self.te
+        # totS = barS + self.sa
+        # dz = lambda A: de.Differentiate(A, self.coords['z']) 
+        # h_mean = lambda A: de.Average(A,'x')
+        # # Heat and salt fluxes
+        # Jt = -h_mean(dz(totT))(z=0)
+        # Js = -h_mean(dz(totS))(z=0)
+        # # Nusselt and Sherwood numbers 
+        # Nu = h_mean(np.sqrt(Pr*Ra)*w*totT - dz(totT))(z=Lz/2)
+        # Sh = h_mean(np.sqrt(Pr*Ra)/tau*w*totS - dz(totS))(z=Lz/2)
+        # # .evaluate() returns a field object
+        # # ['g'] accesses the grid data
+        # # Heat and salt fluxes
+        # Jt_val = Jt.evaluate()['g'].real
+        # Js_val = Js.evaluate()['g'].real
+        # # Nusselt and Sherwood numbers 
+        # Nu_val = Nu.evaluate()['g'].real
+        # Sh_val = Sh.evaluate()['g'].real
+        # if self.dist.comm.rank == 0:
+        #     return {'Jt': float(Jt_val),
+        #             'Js': float(Js_val),
+        #             'Nu': float(Nu_val),
+        #             'Sh': float(Sh_val)}
+        # else:
+        #     return None
+class ShearedBoundedDiffusiveConvection(DoubleDiffusion):
     def build_problems(self):
         self.build_ivp_problem()
     def build_ivp_problem(self):
