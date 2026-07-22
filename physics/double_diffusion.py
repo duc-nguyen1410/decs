@@ -575,7 +575,7 @@ class ShearedDiffusiveConvection(DoubleDiffusion):
         #             'Sh': float(Sh_val)}
         # else:
         #     return None
-class ShearedBoundedDiffusiveConvection(DoubleDiffusion):
+class WallShearedDiffusiveConvection(DoubleDiffusion):
     def build_problems(self):
         self.build_ivp_problem()
     def build_ivp_problem(self):
