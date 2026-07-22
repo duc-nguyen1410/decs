@@ -466,7 +466,6 @@ class FluidModel:
         view[2] = slice(None) 
         coeff *= phase_shift[tuple(view)]
         field.load_from_global_coeff_data(coeff)
-
     def apply_symmetry_az(self, field, az):
         """Applies a translation in the z-direction (Fourier only)."""
         if self.bounded:
@@ -481,11 +480,13 @@ class FluidModel:
         # print("coeff.imag",np.linalg.norm(coeff.imag))
         field.load_from_global_coeff_data(coeff)
         # field['c'] = coeff
-    def apply_symmetry(self, x, ax=0, az=0):
+    def apply_symmetry(self, x, sigma):
         self.set_state(x)
         for field in self.fields:
-            if ax != 0:
-                self.apply_symmetry_ax(field, ax)
-            if az != 0 and not self.bounded: # Only if z is Fourier!
-                self.apply_symmetry_az(field, az)
+            if sigma.ax != 0:
+                self.apply_symmetry_ax(field, sigma.ax)
+            if sigma.ay != 0:
+                self.apply_symmetry_ay(field, sigma.ay)
+            if sigma.az != 0 and not self.bounded: # Only if z is Fourier!
+                self.apply_symmetry_az(field, sigma.az)
         return self.get_state()

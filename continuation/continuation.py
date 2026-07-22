@@ -34,6 +34,7 @@ class Continuation:
         self.odir = (params or {}).get('odir', './')
         self.Tsearch = (params or {}).get('Tsearch', False)
         self.Rxsearch = (params or {}).get('Rxsearch', False)
+        self.Rysearch = (params or {}).get('Rysearch', False)
         self.Rzsearch = (params or {}).get('Rzsearch', False)
         self.Tp = (params or {}).get('Tp', 1.0)
         self.ax = (params or {}).get('ax', 0.0)
@@ -77,7 +78,7 @@ class Continuation:
         self.ECSSolver.model.odir = self.ECSSolver.odir # update this for saving time-dependent solution later
         
         # Call your solver's main execution method
-        result = self.ECSSolver.NewtonSolver(x0=x_guess,Tp=self.Tp,ax=self.ax,az=self.az)
+        result = self.ECSSolver.NewtonSolver(x0=x_guess,Tp=self.Tp,ax=self.ax,ay=self.ay,az=self.az)
         
         self.isearch += 1
         return result
@@ -108,6 +109,7 @@ class Continuation:
         xi = np.concatenate([x_guess, 
                             [self.Tp] if self.Tsearch else [], 
                             [self.ax] if self.Rxsearch else [], 
+                            [self.ay] if self.Rysearch else [], 
                             [self.az] if self.Rzsearch else []])  
         nonlinear_res = self.ECSSolver.NonlinearOperator(xi)
         return np.linalg.norm(nonlinear_res)
@@ -142,8 +144,10 @@ class Continuation:
                 self.Tp_history.append(sol[N_+self.Tsearch-1])
             if self.Rxsearch:
                 self.ax_history.append(sol[N_+self.Tsearch+self.Rxsearch-1])
+            if self.Rysearch:
+                self.ay_history.append(sol[N_+self.Tsearch+self.Rxsearch+self.Rysearch-1])
             if self.Rzsearch:
-                self.az_history.append(sol[N_+self.Tsearch+self.Rxsearch+self.Rzsearch-1])
+                self.az_history.append(sol[N_+self.Tsearch+self.Rxsearch+self.Rysearch+self.Rzsearch-1])
 
             if i == 0:
                 self.s_history.append(0.0)
@@ -179,6 +183,9 @@ class Continuation:
                     if self.Rxsearch:
                         axnew = quadraticInterpolate(self.ax_history[-3:], self.s_history[-3:], s_next)
                         self.ax = axnew
+                    if self.Rysearch:
+                        aynew = quadraticInterpolate(self.ay_history[-3:], self.s_history[-3:], s_next)
+                        self.ay = aynew
                     if self.Rzsearch:
                         aznew = quadraticInterpolate(self.az_history[-3:], self.s_history[-3:], s_next)
                         self.az = aznew
@@ -201,6 +208,10 @@ class Continuation:
                         dax = self.ax_history[-1] - self.ax_history[-2]
                         axnew = self.ax_history[-1] + ds * dax / norm
                         self.ax = axnew
+                    if self.Rysearch:
+                        day = self.ay_history[-1] - self.ay_history[-2]
+                        aynew = self.ay_history[-1] + ds * day / norm
+                        self.ay = aynew
                     if self.Rzsearch:
                         daz = self.az_history[-1] - self.az_history[-2]
                         aznew = self.az_history[-1] + ds * daz / norm
@@ -214,6 +225,8 @@ class Continuation:
                     logger.info(f"Predicted Tp = {self.Tp:.6f}")
                 if self.Rxsearch:
                     logger.info(f"Predicted ax = {self.ax:.6f}")
+                if self.Rysearch:
+                    logger.info(f"Predicted ay = {self.ay:.6f}")
                 if self.Rzsearch:                
                     logger.info(f"Predicted az = {self.az:.6f}")
                 logger.info(f"Predicted {self.mu_name} = {mu_pred:.6f}")
@@ -252,8 +265,10 @@ class Continuation:
                     self.Tp_history.append(sol[N_+self.Tsearch-1])
                 if self.Rxsearch:
                     self.ax_history.append(sol[N_+self.Tsearch+self.Rxsearch-1])
+                if self.Rysearch:
+                    self.ay_history.append(sol[N_+self.Tsearch+self.Rxsearch+self.Rysearch-1])
                 if self.Rzsearch:
-                    self.az_history.append(sol[N_+self.Tsearch+self.Rxsearch+self.Rzsearch-1])
+                    self.az_history.append(sol[N_+self.Tsearch+self.Rxsearch+self.Rysearch+self.Rzsearch-1])
                 
                 # Calculate actual arclength step taken
                 ds_actual = np.sqrt(np.linalg.norm(self.x_history[-1] - self.x_history[-2])**2 + 

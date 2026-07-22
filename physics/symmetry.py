@@ -28,3 +28,34 @@ class Symmetry:
     def is_nontrivial(self):
         return not (self.s == 1 and self.sx == 1 and self.sy == 1 and self.sz == 1 and 
                     self.ax == 0 and self.ay == 0 and self.az == 0)
+    
+    def s(self):
+        return self.s
+    def set_s(self, s):
+        self.s = s 
+
+    def sx(self):
+        return self.sx
+    def set_sx(self, sx):
+        self.sx = sx 
+    def sy(self):
+        return self.sy
+    def set_sy(self, sy):
+        self.sy = sy
+    def sz(self):
+        return self.sz
+    def set_sz(self, sz):
+        self.sz = sz 
+    
+    def ax(self):
+        return self.ax
+    def set_ax(self, ax):
+        self.ax = ax 
+    def ay(self):
+        return self.ay
+    def set_ay(self, ay):
+        self.ay = ay
+    def az(self):
+        return self.az
+    def set_az(self, az):
+        self.az = az 
