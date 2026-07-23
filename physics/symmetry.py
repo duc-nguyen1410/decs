@@ -1,6 +1,9 @@
 import numpy as np
+from mpi4py import MPI
+import logging
+logger = logging.getLogger(__name__)
 class Symmetry:
-    def __init__(self, s=1, sx=1, sy=1, sz=1, st=1, ax=0, ay=0, az=0):
+    def __init__(self, s:int=1, sx:int=1, sy:int=1, sz:int=1, ax:float=0, ay:float=0, az:float=0):
         """
         Defines a symmetry operation: S [u(x,y,z)] = s * u(sx*x + ax, sy*y + ay, sz*z + az)
 
@@ -16,14 +19,20 @@ class Symmetry:
         self.s = s
         self.sx, self.sy, self.sz = sx, sy, sz
         self.ax, self.ay, self.az = ax, ay, az
+    def print(self):
+        return f"[{self.s} {self.sx} {self.sy} {self.sz} {self.ax} {self.ay} {self.az}]"
 
-    @classmethod
-    def from_file(cls, filename):
+    def load_from_file(self, filename:str):
         with open(filename, 'r') as f:
+            logger.info(f"Loading symmetry from file {filename}")
             # Format: s sx sy sz ax ay az
             data = [float(x) for x in f.readline().split()]
-        return cls(s=data[0], sx=data[1], sy=data[2], sz=data[3], 
-                   ax=data[4], ay=data[5], az=data[6])
+            if len(data)==7:
+                self.s, self.sx, self.sy, self.sz, self.ax, self.ay, self.az = data
+                logger.info("Loaded symmetry: "+self.print())
+            else:
+                logger.warning(f"File {filename} contains invalid symmetry format! Expected 7 values, got {len(data)}.")
+        
 
     def is_nontrivial(self):
         return not (self.s == 1 and self.sx == 1 and self.sy == 1 and self.sz == 1 and 

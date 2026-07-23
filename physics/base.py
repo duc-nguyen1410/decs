@@ -3,6 +3,7 @@ import dedalus.public as de
 import h5py
 from mpi4py import MPI
 import matplotlib.pyplot as plt
+from .symmetry import Symmetry
 import logging
 logger = logging.getLogger(__name__)
 class FluidModel:
@@ -389,7 +390,7 @@ class FluidModel:
             for i in range(num_steps):
                 solver.step(dt)
         return self.get_state()
-    def save_time_dependent_solution(self, x0, Tp, ax=0, az=0):
+    def save_time_dependent_solution(self, x0, Tp:float, ax=0, ay=0, az=0):
         MPI.COMM_WORLD.Barrier()
         solver = self.ivp_problem.build_solver(de.RK222)
         self.set_state(x0)
@@ -398,7 +399,7 @@ class FluidModel:
         sim_time = Tp # for periodic orbit
         n_full_solution_steps = 100
         # for traveling wave and relative periodic orbit
-        a_max = max(abs(ax),abs(az))
+        a_max = max(abs(ax),abs(ay),abs(az))
         if a_max<0.05:
             sim_time = 2 * Tp
         else:
@@ -412,8 +413,8 @@ class FluidModel:
         solver.stop_wall_time = np.inf
         solver.stop_iteration = np.inf
 
-        self.set_snapshots(solver=solver, sim_dt=sim_time/n_full_solution_steps)
-        # self.set_timehistory(solver=solver,properties=properties)
+        # self.set_snapshots(solver=solver, sim_dt=sim_time/n_full_solution_steps)
+        # self.set_timehistory(solver=solver, properties=properties)
         
         num_steps = int(sim_time/self.init_dt)
         dt = sim_time/num_steps
@@ -446,46 +447,140 @@ class FluidModel:
             data_slices.append(gdata.ravel())
         return np.concatenate(data_slices)
     
-    def apply_symmetry_ax(self, field, ax):
+    def translation_ax(self, field, ax:float):
+        ''' Shift field by dx=ax*Lx in the periodic x-direction (Fourier only). '''
         kx = self.bases[0].wavenumbers
-        phase_shift = np.exp(1j * kx * ax)
-        coeff = field.allgather_data('c')
-        view = [np.newaxis] * coeff.ndim
-        view[1] = slice(None) # Match the X-axis
-        coeff *= phase_shift[tuple(view)]
-        field.load_from_global_coeff_data(coeff)
-    def apply_symmetry_ay(self, field, ay):
+        dx = ax*self.bounds[0]
+        phase_shift = np.exp(1j * kx * dx)
+        field_coeff = field.allgather_data('c')
+        if self.dim == 2:
+            field_coeff *= phase_shift[:, np.newaxis]
+        elif self.dim == 3:
+            field_coeff *= phase_shift[:, np.newaxis, np.newaxis]
+        field.load_from_global_coeff_data(field_coeff)
+    
+    def translation_ay(self, field, ay:float):
+        ''' Shift field by dy=ay*Ly in the periodic y-direction (Fourier only). '''
         if self.dim < 3:
             return # Do nothing if 2D
         ky = self.bases[1].wavenumbers
-        phase_shift = np.exp(1j * ky * ay)
-        coeff = field.allgather_data('c')
-        # In 3D (comp, x, y, z), y is axis 2
-        view = [np.newaxis] * coeff.ndim
-        view[2] = slice(None) 
-        coeff *= phase_shift[tuple(view)]
-        field.load_from_global_coeff_data(coeff)
-    def apply_symmetry_az(self, field, az):
-        """Applies a translation in the z-direction (Fourier only)."""
+        dy = ay*self.bounds[1]
+        phase_shift = np.exp(1j * ky * dy)
+        field_coeff = field.allgather_data('c')
+        field_coeff *= phase_shift[np.newaxis, :, np.newaxis]
+        field.load_from_global_coeff_data(field_coeff)
+
+    def translation_az(self, field, az:float):
+        ''' Shift field by dz=az*Lz in the periodic y-direction (Fourier only). '''
         if self.bounded:
             raise NotImplementedError("Cannot use phase-shift for bounded (Chebyshev) z-basis.")
         kz = self.bases[-1].wavenumbers
-        phase_shift = np.exp(1j * kz * az)
+        dz = az*self.bounds[-1]
+        phase_shift = np.exp(1j * kz * dz)
+        field_coeff = field.allgather_data('c')
+        if self.dim == 2:
+            field_coeff *= phase_shift[np.newaxis,:]
+        elif self.dim == 3:
+            field_coeff *= phase_shift[np.newaxis,np.newaxis,:]
+        field.load_from_global_coeff_data(field_coeff)
+
+    def reflection_x(self,field):
         coeff = field.allgather_data('c')
-        # In 2D (comp, x, z), z is axis 2. In 3D (comp, x, y, z), z is axis 3.
-        view = [np.newaxis] * coeff.ndim
-        view[-1] = slice(None) # z is always the last axis
-        coeff = coeff * phase_shift[tuple(view)]
-        # print("coeff.imag",np.linalg.norm(coeff.imag))
-        field.load_from_global_coeff_data(coeff)
-        # field['c'] = coeff
-    def apply_symmetry(self, x, sigma):
+        def build_reflection_perm_x(kx, tol=1e-12):
+            N = len(kx)
+            perm = np.zeros(N, dtype=int)
+            for i, k in enumerate(kx):
+                # find index of -k
+                j = np.where(np.abs(kx + k) < tol)[0]
+                if len(j) == 0:
+                    # must be Nyquist → self-map
+                    perm[i] = i
+                else:
+                    perm[i] = j[0]
+            return perm
+        # apply kx -> -kx permutation
+        kx = self.bases[0].wavenumbers
+        # build permutation: k -> -k
+        perm_x = build_reflection_perm_x(kx)
+        if len(field.tensorsig) > 0: # is velocity vector
+            coeff_ref  = coeff[:, perm_x, :] if self.dim==2 else coeff[:, perm_x, :, :]
+            coeff_ref[0] *= -1   # horizontal velocity is odd, change sign of ux only
+        else:
+            coeff_ref  = coeff[perm_x, :] if self.dim==2 else coeff[perm_x, :, :]
+        
+        field.load_from_global_coeff_data(coeff_ref)
+    def reflection_y(self,field):
+        if self.dim < 3:
+            return # Do nothing if 2D
+        coeff = field.allgather_data('c')
+        def build_reflection_perm_y(ky, tol=1e-12):
+            N = len(ky)
+            perm = np.zeros(N, dtype=int)
+            for i, k in enumerate(ky):
+                # find index of -k
+                j = np.where(np.abs(ky + k) < tol)[0]
+                if len(j) == 0:
+                    # must be Nyquist → self-map
+                    perm[i] = i
+                else:
+                    perm[i] = j[0]
+            return perm
+        # apply kx -> -kx permutation
+        ky = self.bases[1].wavenumbers
+        # build permutation: k -> -k
+        perm_y = build_reflection_perm_y(ky)
+        if len(field.tensorsig) > 0: # is velocity vector
+            coeff_ref  = coeff[:, :, perm_y, :]
+            coeff_ref[1] *= -1   # spanwise velocity is odd
+        else:
+            coeff_ref  = coeff[:, perm_y, :]
+
+        field.load_from_global_coeff_data(coeff_ref)
+
+    def reflection_z(self,field):
+        coeff = field.allgather_data('c')
+        def build_reflection_perm_z(kz, tol=1e-12):
+            N = len(kz)
+            perm = np.zeros(N, dtype=int)
+            for i, k in enumerate(kz):
+                # find index of -k
+                j = np.where(np.abs(kz + k) < tol)[0]
+                if len(j) == 0:
+                    # must be Nyquist → self-map
+                    perm[i] = i
+                else:
+                    perm[i] = j[0]
+            return perm
+        # apply kz -> -kz permutation
+        kz = self.bases[-1].wavenumbers
+        # build permutation: k -> -k
+        perm_z = build_reflection_perm_z(kz)
+        if len(field.tensorsig) > 0: # is velocity vector
+            coeff_ref  = coeff[:, :, perm_z] if self.dim==2 else coeff[:, :, :, perm_z]
+            coeff_ref[-1] *= -1   # vertical velocity is odd
+        else:
+            coeff_ref  = coeff[:, perm_z] if self.dim==2 else coeff[:, :, perm_z]
+            coeff_ref *= -1 # change sign of scalar
+        # enforce zero mode for odd variable
+        # zero_idx = np.where(kz == 0)[0][0]
+        # coeff_ref[0, :, zero_idx] = 0
+        field.load_from_global_coeff_data(coeff_ref)
+
+    def apply_symmetry(self, x, sigma:Symmetry):
         self.set_state(x)
         for field in self.fields:
+            # apply reflection symmetries
+            if sigma.sx == -1:
+                self.reflection_x(field)
+            if sigma.sy == -1:
+                self.reflection_y(field)
+            if sigma.sz == -1:
+                self.reflection_z(field)
+            # apply translation symmetries
             if sigma.ax != 0:
-                self.apply_symmetry_ax(field, sigma.ax)
+                self.translation_ax(field, sigma.ax)
             if sigma.ay != 0:
-                self.apply_symmetry_ay(field, sigma.ay)
+                self.translation_ay(field, sigma.ay)
             if sigma.az != 0 and not self.bounded: # Only if z is Fourier!
-                self.apply_symmetry_az(field, sigma.az)
+                self.translation_az(field, sigma.az)
         return self.get_state()

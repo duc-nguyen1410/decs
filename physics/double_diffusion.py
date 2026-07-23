@@ -205,7 +205,7 @@ class SaltFinger(DoubleDiffusion):
         vars = [self.p, self.u, self.te, self.sa, 
                 tau_p, tau_u, tau_te, tau_sa]
         self.ivp_problem = de.IVP(vars, namespace=ns)
-        # Periodic Governing Equations
+        # Periodic Governing Equations nondimensionalized by thermal-diffusion-scaled velocity kappaT/H
         self.ivp_problem.add_equation("trace(grad(u)) + tau_p = 0")
         self.ivp_problem.add_equation("integ(p) = 0") 
         self.ivp_problem.add_equation("dt(u) + grad(p) - Pr*lap(u) - Pr*Ra*(te-sa/Rrho)*ez + tau_u = - u@grad(u)")
@@ -253,12 +253,9 @@ class SaltFinger(DoubleDiffusion):
     def get_flow_properties(self):
         ez = self.coords.unit_vector_fields(self.dist)[-1]
         w = self.u @ ez
-        # Heat and salt fluxes
-        Ft = de.Average(w*self.te)
-        Fs = de.Average(w*self.sa)/self.params['tau']
         # Nusselt and Sherwood numbers 
-        Nu = 1 - Ft
-        Sh = 1 - Fs
+        Nu = 1 - de.Average(w*self.te)
+        Sh = 1 - de.Average(w*self.sa)/self.params['tau']
         # .evaluate() returns a field object
         # ['g'] accesses the grid data
         # Nusselt and Sherwood numbers 
@@ -269,6 +266,14 @@ class SaltFinger(DoubleDiffusion):
                     'Sh': float(Sh_val)}
         else:
             return None
+
+        
+
+
+
+
+
+        
 class BoundedSaltFinger(DoubleDiffusion):
     def build_problems(self):
         self.build_ivp_problem()

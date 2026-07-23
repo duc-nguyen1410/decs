@@ -7,7 +7,7 @@ from scipy import optimize
 import logging
 import dedalus.public as de
 from mpi4py import MPI
-from ..physics.symmetry import Symmetry
+from physics.symmetry import Symmetry
 logging.getLogger('solvers').setLevel(logging.WARNING)
 logging.getLogger('subsystems').setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
@@ -42,14 +42,18 @@ class ECSSolver:
         # save updates of solution during the Newton iteration
         self.save_ecs_history = (params or {}).get('save_ecs_history', False)
 
-    def G(self, x0, Tp, sigma):
+    def G(self, x0, Tp, ax=0, ay=0, az=0):
         ''' Return sigma*F^Tp(x0) '''
         x = self.model.F_Tp(x0, Tp)
-        # symmetry operations on x using ax and az if needed
-        if sigma.is_nontrivial():
-            x = self.model.apply_symmetry(x, sigma)
+        # apply a relative symmetry to determine traveling wave or relative periodic orbit
+        relative_sigma = Symmetry(ax=ax,ay=ay,az=az)
+        if relative_sigma.is_nontrivial():
+            x = self.model.apply_symmetry(x, relative_sigma)
+        # apply a specific symmetry as a constraint
+        if self.sigma.is_nontrivial():
+            x = self.model.apply_symmetry(x, self.sigma)
         return x
-    def DG(self, x_base, x_perturb, phi_base, Tp, sigma):
+    def DG(self, x_base, x_perturb, phi_base, Tp, ax=0, ay=0, az=0):
         ''' Return (F^Tp(x0+dx) - F^Tp(x0)) / ||dx|| '''
         norm_v = np.linalg.norm(x_perturb)
         if norm_v == 0:
@@ -58,7 +62,7 @@ class ECSSolver:
         # logger.info(f"Computing DG with epsilon: {epsilon}, ||x_perturb||: {norm_v}")
         array_init = x_base + epsilon*x_perturb
         # logger.info(f"Initial state ||x_base + epsilon*x_perturb||: {np.linalg.norm(array_init)}, ||x_base||: {np.linalg.norm(x_base)}")
-        array_final = self.G(array_init, Tp, sigma)
+        array_final = self.G(array_init, Tp, ax=0, ay=0, az=0)
         # logger.info(f"G computed, ||G(x_base + epsilon*x_perturb)||: {np.linalg.norm(array_final)}, ||G(x_base)||: {np.linalg.norm(phi_base)}")
         array_out = (array_final-phi_base)/epsilon
         # logger.info(f"DG output computed, ||DG||: {np.linalg.norm(array_out)}")
@@ -82,13 +86,12 @@ class ECSSolver:
         if self.Rzsearch:
             az_temp = xi[N_+self.Tsearch+self.Rxsearch+self.Rysearch+self.Rzsearch-1]
             delta_az = xi_perturb[N_+self.Tsearch+self.Rxsearch+self.Rysearch+self.Rzsearch-1]
-        sigma = Symmetry(ax=ax_temp,ay=ay_temp,az=az_temp)
         
         x_base = np.copy(xi[:N_])
         delta_x = np.copy(xi_perturb[:N_])
 
         array_out = np.zeros_like(xi)
-        array_out[:N_] = self.DG(x_base, delta_x, phi_base, T_temp, sigma) - delta_x
+        array_out[:N_] = self.DG(x_base, delta_x, phi_base, T_temp, ax_temp, ay_temp, az_temp) - delta_x
         # logger.info(f"Linear operator applied, ||DG||: {np.linalg.norm(array_out[:N_])}, ||delta_x||: {np.linalg.norm(delta_x)}")
         
         if self.Tsearch: # Sensitivity to T + Phase Condition for T
@@ -113,8 +116,7 @@ class ECSSolver:
         ax_temp = xi[N_+self.Tsearch+self.Rxsearch-1] if self.Rxsearch else 0.0
         ay_temp = xi[N_+self.Tsearch+self.Rxsearch+self.Rysearch-1] if self.Rysearch else 0.0
         az_temp = xi[N_+self.Tsearch+self.Rxsearch+self.Rysearch+self.Rzsearch-1] if self.Rzsearch else 0.0
-        sigma = Symmetry(ax=ax_temp,ay=ay_temp,az=az_temp)
-        F_state = self.G(state, T_temp, sigma)
+        F_state = self.G(state, T_temp, ax_temp, ay_temp, az_temp)
         xi_out[:N_] = - F_state + state
         return xi_out  # Residual for the state variables
     def arnoldi_iteration_inner(self, xi_base, Q, phi_base, k:int):
@@ -127,7 +129,7 @@ class ECSSolver:
         Hk[k] = np.linalg.norm(Qk)
         Qk = Qk/Hk[k]
         return Qk, Hk
-    def arnoldi_iteration(self, x_base, phi_base, T, sigma, r, n:int):
+    def arnoldi_iteration(self, x_base, phi_base, T, ax, ay, az, r, n:int):
         ''' Arnoldi iteration '''
         # Ensure starting vector is orthogonal to neutral direction
         def project_out(v):
@@ -162,10 +164,10 @@ class ECSSolver:
         for k in range(1, n + 1):
             if self.projectNeutralDrift:
                 q_in = project_out(Q[:, k-1]) # Project input before applying L
-                v = self.DG(x_base, q_in, phi_base, T, sigma) # Apply operator
+                v = self.DG(x_base, q_in, phi_base, T, ax, ay, az) # Apply operator
                 v = project_out(v) # Project output
             else:
-                v = self.DG(x_base, Q[:, k - 1], phi_base, T, sigma)
+                v = self.DG(x_base, Q[:, k - 1], phi_base, T, ax, ay, az)
             for j in range(0, k): # Arnoldi orthogonalization
                 H[j, k-1] = np.vdot(Q[:,j], v)
                 v = v - H[j, k-1]*Q[:,j]
@@ -286,10 +288,9 @@ class ECSSolver:
             ax_temp = x[N_+self.Tsearch+self.Rxsearch-1] if self.Rxsearch else 0.0
             ay_temp = x[N_+self.Tsearch+self.Rxsearch+self.Rysearch-1] if self.Rysearch else 0.0
             az_temp = x[N_+self.Tsearch+self.Rxsearch+self.Rysearch+self.Rzsearch-1] if self.Rzsearch else 0.0
-            sigma = Symmetry(ax=ax_temp,ay=ay_temp,az=az_temp)
-            phi_base = self.G(x[:N_], T_temp, sigma)
+            phi_base = self.G(x[:N_], T_temp, ax_temp, ay_temp, az_temp)
             # Floquet method
-            Q, H_ = self.arnoldi_iteration(x[:N_], phi_base, T_temp, sigma, np.random.rand(N_), self.Neigen) # <-- Ne iterations
+            Q, H_ = self.arnoldi_iteration(x[:N_], phi_base, T_temp, ax_temp, ay_temp, az_temp, np.random.rand(N_), self.Neigen) # <-- Ne iterations
             H = H_[0:-1,:]
             # get eigenvalue and eigenvector results, these are Floquet multipliers
             eigenvalues, eigenvectors_ = scipy.linalg.eig(H) 
@@ -340,7 +341,7 @@ class ECSSolver:
                     Rxsearch=False,
                     Rysearch=False,
                     Rzsearch=False,
-                    Tp=0.02, 
+                    Tp = 20.0, 
                     ax = 0.0, 
                     ay = 0.0,
                     az = 0.0):
@@ -359,8 +360,8 @@ class ECSSolver:
                             [Tp] if self.Tsearch else [], 
                             [ax] if self.Rxsearch else [], 
                             [ay] if self.Rysearch else [],
-                            [az] if self.Rzsearch else []])  
-        self.sigma = Symmetry(ax=ax,ay=ay,az=az)
+                            [az] if self.Rzsearch else []]) 
+        
         xi_pert = np.zeros_like(xi)
         success = False
         for i in range(self.max_iter):
@@ -372,36 +373,44 @@ class ECSSolver:
             else:
                 # save a temporary solution at each iteration for debugging purposes or restarting if needed
                 self.model.save_state(self.odir + 'solution_temp')
-            # self.model.preview()
+            
             nonlinear_res = self.NonlinearOperator(xi)
             norm_b = np.linalg.norm(nonlinear_res)
             self.save_flow_properties(xi)
             if i==0:
-                logger.info(f"Iteration {i}, Residual norm: {norm_b}, Tp: {xi[N_+self.Tsearch-1] if self.Tsearch else Tp}, ax: {xi[N_+self.Tsearch+self.Rxsearch-1] if self.Rxsearch else ax}, az: {xi[N_+self.Tsearch+self.Rxsearch+self.Rzsearch-1] if self.Rzsearch else az}")
-            T_temp = xi[N_+self.Tsearch-1] if self.Tsearch else self.Tp
-            ax_temp = xi[N_+self.Tsearch+self.Rxsearch-1] if self.Rxsearch else 0.0
-            ay_temp = xi[N_+self.Tsearch+self.Rxsearch+self.Rysearch-1] if self.Rysearch else 0.0
-            az_temp = xi[N_+self.Tsearch+self.Rxsearch+self.Rysearch+self.Rzsearch-1] if self.Rzsearch else 0.0
+                logger.info(f"Iteration {i}, Residual norm: {norm_b}" \
+                            +f"{f", Tp: {xi[N_+self.Tsearch-1]}" if self.Tsearch else ""}" \
+                            +f"{f", ax: {xi[N_+self.Tsearch+self.Rxsearch-1]}" if self.Rxsearch else ""}" \
+                            +f"{f", ay: {xi[N_+self.Tsearch+self.Rxsearch+self.Rysearch-1]}" if self.Rysearch else ""}" \
+                            +f"{f", az: {xi[N_+self.Tsearch+self.Rxsearch+self.Rysearch+self.Rzsearch-1]}" if self.Rzsearch else ""}")
             
             if norm_b < self.tol:
                 logger.info("Convergence achieved!")
                 success = True
-                # save the solution to an h5 file
+                # save the solution
                 self.model.set_state(xi[:N_])
                 self.model.save_state(self.odir + 'solution')
+                # save best Tp
+
+                # save best symmetry
+
                 # save time-dependent data
                 if self.Tsearch or self.Rxsearch or self.Rysearch or self.Rzsearch:
                     self.model.save_time_dependent_solution(xi[:N_],
-                                                            T_temp,
-                                                            ax_temp,
-                                                            ay_temp,
-                                                            az_temp)
+                                                            xi[N_+self.Tsearch-1] if self.Tsearch else Tp,
+                                                            xi[N_+self.Tsearch+self.Rxsearch-1] if self.Rxsearch else ax,
+                                                            xi[N_+self.Tsearch+self.Rxsearch+self.Rysearch-1] if self.Rysearch else ay,
+                                                            xi[N_+self.Tsearch+self.Rxsearch+self.Rysearch+self.Rzsearch-1] if self.Rzsearch else az)
                 # compute stability
                 if self.computeStability:
                     self.stability(xi)
                 break
             
-            phi_base = self.G(xi[:N_], T_temp, self.sigma)
+            phi_base = self.G(xi[:N_], 
+                              xi[N_+self.Tsearch-1] if self.Tsearch else self.Tp, 
+                              xi[N_+self.Tsearch+self.Rxsearch-1] if self.Rxsearch else ax,
+                              xi[N_+self.Tsearch+self.Rxsearch+self.Rysearch-1] if self.Rysearch else ay,
+                              xi[N_+self.Tsearch+self.Rxsearch+self.Rysearch+self.Rzsearch-1] if self.Rzsearch else az)
             dxi, error, tr = self.GMRES(xi, xi_pert, phi_base, nonlinear_res, self.krylov_dim, self.trust_radius)
             xi += dxi # Update the solution
             nonlinear_res = self.NonlinearOperator(xi)
