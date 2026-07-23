@@ -27,7 +27,7 @@ class FluidModel:
 
         self.init_dt = (params or {}).get('init_dt', 2e-4)
         self.odir = (params or {}).get('odir', "sim_output/")
-        self.ext = (params or {}).get('ext', 'nc')
+        self.ext = (params or {}).get('ext', '.nc')
 
         # Registry: Newton solver will see [u, ...]
         self.fields = []
