@@ -89,8 +89,7 @@ class FluidModel:
             # Re-initialize the Dedalus Problem with the new fields/bases
             self.build_fields()
 
-        self.build_ivp_problem()
-        self.build_evp_problem()
+        self.build_problems()
     
     def get_grid_shape(self):
         """
