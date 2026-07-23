@@ -177,7 +177,7 @@ class FluidModel:
             if target_dir and not os.path.exists(target_dir):
                 os.makedirs(target_dir)
         self.dist.comm.Barrier() # Wait for directory to exist before writing
-        # ext = os.path.splitext(filename)[1].lower()
+        logger.info(f"Saving state to {filename}")
 
         gathered_data = {}
         for field in self.fields:
