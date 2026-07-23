@@ -298,7 +298,7 @@ class FluidModel:
                         comp_shape = ds.variables[f'{field.name}_0'].shape
                         data = np.zeros((num_comp,) + comp_shape)
                         for i in range(num_comp):
-                            data[i] = ds.variables[f'{field.name}_{i}'][:]
+                            data[i] = ds.variables[f'{field.name}_{i}'][:].T
                     else:
                         # Scalar field
                         data = ds.variables[field.name][:].T
