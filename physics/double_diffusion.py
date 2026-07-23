@@ -201,8 +201,7 @@ class SaltFinger(DoubleDiffusion):
               'ex': ex, 'ey': ey, 'ez': ez,
               'w': self.u @ ez,
              }
-        if self.dist.comm.rank == 0:
-            print(ns)
+
         vars = [self.p, self.u, self.te, self.sa, 
                 tau_p, tau_u, tau_te, tau_sa]
         self.ivp_problem = de.IVP(vars, namespace=ns)
