@@ -328,11 +328,11 @@ class FluidModel:
         for field in self.fields:
             field['g'] += scale * np.random.standard_normal(field['g'].shape)
 
-    # def set_CFL(self, solver, initial_dt=0.001, cadence=10, safety=0.5, threshold=0.1,  max_change=1.5, min_change=0.5, max_dt=0.1):
-    #     """ Set up the CFL condition for adaptive time-stepping. """
-    #     self.CFL = de.CFL(solver, initial_dt=initial_dt, cadence=cadence, safety=safety, threshold=threshold, 
-    #                       max_change=max_change, min_change=min_change, max_dt=max_dt)
-    #     self.CFL.add_velocity(self.fields[0]) # Assuming the first field is velocity; adjust if needed
+    def set_CFL(self, solver, initial_dt=0.001, cadence=10, safety=0.5, threshold=0.1,  max_change=1.5, min_change=0.5, max_dt=0.1):
+        """ Set up the CFL condition for adaptive time-stepping. """
+        self.CFL = de.CFL(solver, initial_dt=initial_dt, cadence=cadence, safety=safety, threshold=threshold, 
+                          max_change=max_change, min_change=min_change, max_dt=max_dt)
+        self.CFL.add_velocity(self.fields[0]) # Assuming the first field is velocity; adjust if needed
 
     def solve_EVP(self, x0, N=20, target=1.0):
         """

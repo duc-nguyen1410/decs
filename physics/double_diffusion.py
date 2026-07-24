@@ -271,14 +271,13 @@ class SaltFinger(DoubleDiffusion):
                     'Sh': float(Sh_val)}
         else:
             return None
-    # def CFL(self):
+
+    # def set_CFL(self, solver, initial_dt=0.001, cadence=10, safety=0.5, threshold=0.1,  max_change=1.5, min_change=0.5, max_dt=0.1):
+    #     """ Set up the CFL condition for adaptive time-stepping. """
     #     self.use_CFL = True
-    def set_CFL(self, solver, initial_dt=0.001, cadence=10, safety=0.5, threshold=0.1,  max_change=1.5, min_change=0.5, max_dt=0.1):
-        """ Set up the CFL condition for adaptive time-stepping. """
-        self.use_CFL = True
-        self.CFL = de.CFL(solver, initial_dt=initial_dt, cadence=cadence, safety=safety, threshold=threshold, 
-                            max_change=max_change, min_change=min_change, max_dt=max_dt)
-        self.CFL.add_velocity(self.fields[0]) # Assuming the first field is velocity; adjust if needed
+    #     self.CFL = de.CFL(solver, initial_dt=initial_dt, cadence=cadence, safety=safety, threshold=threshold, 
+    #                         max_change=max_change, min_change=min_change, max_dt=max_dt)
+    #     self.CFL.add_velocity(self.fields[0]) # Assuming the first field is velocity; adjust if needed
     
     def set_snapshots(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
         ex = self.coords.unit_vector_fields(self.dist)[0]
