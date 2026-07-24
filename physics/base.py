@@ -549,33 +549,53 @@ class FluidModel:
         field.load_from_global_coeff_data(coeff_ref)
 
     def reflection_z(self,field):
-        coeff = field.allgather_data('c')
-        def build_reflection_perm_z(kz, tol=1e-12):
-            N = len(kz)
-            perm = np.zeros(N, dtype=int)
-            for i, k in enumerate(kz):
-                # find index of -k
-                j = np.where(np.abs(kz + k) < tol)[0]
-                if len(j) == 0:
-                    # must be Nyquist → self-map
-                    perm[i] = i
-                else:
-                    perm[i] = j[0]
-            return perm
-        # apply kz -> -kz permutation
-        kz = self.bases[-1].wavenumbers
-        # build permutation: k -> -k
-        perm_z = build_reflection_perm_z(kz)
-        if len(field.tensorsig) > 0: # is velocity vector
-            coeff_ref  = coeff[:, :, perm_z] if self.dim==2 else coeff[:, :, :, perm_z]
-            coeff_ref[-1] *= -1   # vertical velocity is odd
-        else:
-            coeff_ref  = coeff[:, perm_z] if self.dim==2 else coeff[:, :, perm_z]
-            coeff_ref *= -1 # change sign of scalar
-        # enforce zero mode for odd variable
-        # zero_idx = np.where(kz == 0)[0][0]
-        # coeff_ref[0, :, zero_idx] = 0
-        field.load_from_global_coeff_data(coeff_ref)
+        
+        if self.bounded: # Apply z -> -z reflection for bounded (Chebyshev) z-basis
+            # 1. Parity operator (-1)^n along the z-mode axis (last axis)
+            # Get total number of Chebyshev modes along z
+            Nz = field['c'].shape[-1]
+            parity = (-1) ** np.arange(Nz)  # [1, -1, 1, -1, ...]
+
+            # Reshape parity for broadcasting against field['c'] shape
+            view = [1] * field['c'].ndim
+            view[-1] = Nz
+            parity = parity.reshape(view)
+
+            # 2. Apply Chebyshev parity reflection z -> -z
+            field['c'] *= parity
+
+            # 3. Flip vector component if it's the vertical velocity (w)
+            if len(field.tensorsig) > 0:
+                # Assuming field['c'][idx] contains components and vertical velocity is the last index
+                field['c'][-1] *= -1
+        else: # Use Fourier permutation for periodic bases.
+            coeff = field.allgather_data('c')
+            def build_reflection_perm_z(kz, tol=1e-12):
+                N = len(kz)
+                perm = np.zeros(N, dtype=int)
+                for i, k in enumerate(kz):
+                    # find index of -k
+                    j = np.where(np.abs(kz + k) < tol)[0]
+                    if len(j) == 0:
+                        # must be Nyquist → self-map
+                        perm[i] = i
+                    else:
+                        perm[i] = j[0]
+                return perm
+            # apply kz -> -kz permutation
+            kz = self.bases[-1].wavenumbers
+            # build permutation: k -> -k
+            perm_z = build_reflection_perm_z(kz)
+            if len(field.tensorsig) > 0: # is velocity vector
+                coeff_ref  = coeff[:, :, perm_z] if self.dim==2 else coeff[:, :, :, perm_z]
+                coeff_ref[-1] *= -1   # vertical velocity is odd
+            else:
+                coeff_ref  = coeff[:, perm_z] if self.dim==2 else coeff[:, :, perm_z]
+                coeff_ref *= -1 # change sign of scalar
+            # enforce zero mode for odd variable
+            # zero_idx = np.where(kz == 0)[0][0]
+            # coeff_ref[0, :, zero_idx] = 0
+            field.load_from_global_coeff_data(coeff_ref)
 
     def apply_symmetry(self, x, sigma:Symmetry):
         self.set_state(x)
