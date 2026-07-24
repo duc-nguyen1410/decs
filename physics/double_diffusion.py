@@ -175,7 +175,12 @@ class DoubleDiffusion(FluidModel):
 
     #             self.preview_fig.canvas.draw()
     #             self.preview_fig.canvas.flush_events()
-    
+
+
+########################################################################################
+########################################################################################
+########################################################################################
+########################################################################################
 class SaltFinger(DoubleDiffusion):
     def build_problems(self):
         self.build_ivp_problem()
@@ -266,14 +271,48 @@ class SaltFinger(DoubleDiffusion):
                     'Sh': float(Sh_val)}
         else:
             return None
-
+    # def CFL(self):
+    #     self.use_CFL = True
+    def set_CFL(self, solver, initial_dt=0.001, cadence=10, safety=0.5, threshold=0.1,  max_change=1.5, min_change=0.5, max_dt=0.1):
+        """ Set up the CFL condition for adaptive time-stepping. """
+        self.use_CFL = True
+        self.CFL = de.CFL(solver, initial_dt=initial_dt, cadence=cadence, safety=safety, threshold=threshold, 
+                            max_change=max_change, min_change=min_change, max_dt=max_dt)
+        self.CFL.add_velocity(self.fields[0]) # Assuming the first field is velocity; adjust if needed
+    
+    def set_snapshots(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
+        ex = self.coords.unit_vector_fields(self.dist)[0]
+        ez = self.coords.unit_vector_fields(self.dist)[-1]
+        snapshots = solver.evaluator.add_file_handler(self.odir+'snapshots', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
+        snapshots.add_task(self.te, name='t')
+        snapshots.add_task(self.sa, name='s')
+        snapshots.add_task(self.u@ex, name='u')
+        snapshots.add_task(self.u@ez, name='w')
         
+    def set_timehistory(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
+        ez = self.coords.unit_vector_fields(self.dist)[-1]
+        w = self.u @ ez
+        timehistory = solver.evaluator.add_file_handler(self.odir+'timehistory', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
+        timehistory.add_task(1 - de.Average(w*self.te), name='Nu') # Nusselt number
+        timehistory.add_task(1 - de.Average(w*self.sa)/self.params['tau'], name='Sh') # Sherwood number
 
-
-
-
-
+    def set_meanprofiles(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
+        if self.dim == 2:
+            h_mean = lambda A: de.Average(A,'x')
+        else:
+            h_mean = lambda A: de.Average(A,'x','y')
+        ex = self.coords.unit_vector_fields(self.dist)[0]
+        ez = self.coords.unit_vector_fields(self.dist)[-1]
+        meanprofiles = solver.evaluator.add_file_handler(self.odir+'meanprofiles', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
+        meanprofiles.add_task(h_mean(self.u@ex), name='u') # horizontal averaged x-axis velocity
+        meanprofiles.add_task(h_mean(self.u@ez), name='w') # horizontal averaged z-axis velocity, optional, becasue wm=0
+        meanprofiles.add_task(h_mean(self.te), name='t') # horizontal averaged temperature
+        meanprofiles.add_task(h_mean(self.sa), name='s') # horizontal averaged sanility
         
+########################################################################################
+########################################################################################
+########################################################################################
+########################################################################################
 class BoundedSaltFinger(DoubleDiffusion):
     def build_problems(self):
         self.build_ivp_problem()
@@ -370,7 +409,10 @@ class BoundedSaltFinger(DoubleDiffusion):
         totT = barT + self.te
         totS = barS + self.sa
         dz = lambda A: de.Differentiate(A, self.coords['z']) 
-        h_mean = lambda A: de.Average(A,'x')
+        if self.dim == 2:
+            h_mean = lambda A: de.Average(A,'x')
+        else:
+            h_mean = lambda A: de.Average(A,'x','y')
         # Heat and salt fluxes
         Jt = -h_mean(dz(totT))(z=0)
         Js = -h_mean(dz(totS))(z=0)
@@ -392,6 +434,12 @@ class BoundedSaltFinger(DoubleDiffusion):
                     'Sh': float(Sh_val)}
         else:
             return None
+
+
+########################################################################################
+########################################################################################
+########################################################################################
+########################################################################################
 class DiffusiveConvection(DoubleDiffusion):
     def build_problems(self):
         self.build_ivp_problem()
@@ -470,7 +518,12 @@ class DiffusiveConvection(DoubleDiffusion):
         # Integral constraints
         for v in ['u', 'te', 'sa']:
             self.evp_problem.add_equation(f"integ({v}) = 0")
-    
+
+
+########################################################################################
+########################################################################################
+########################################################################################
+########################################################################################
 class ShearedDiffusiveConvection(DoubleDiffusion):
     ''' Thermohaline-shear instability in paper Radko (2019) '''
     def build_problems(self):
@@ -557,7 +610,12 @@ class ShearedDiffusiveConvection(DoubleDiffusion):
                     'Sh': float(Sh_val)}
         else:
             return None
-        
+
+
+########################################################################################
+########################################################################################
+########################################################################################
+########################################################################################
 class WallShearedDiffusiveConvection(DoubleDiffusion):
     def build_problems(self):
         self.build_ivp_problem()
@@ -657,7 +715,10 @@ class WallShearedDiffusiveConvection(DoubleDiffusion):
         totT = barT + self.te
         totS = barS + self.sa
         dz = lambda A: de.Differentiate(A, self.coords['z']) 
-        h_mean = lambda A: de.Average(A,'x')
+        if self.dim == 2:
+            h_mean = lambda A: de.Average(A,'x')
+        else:
+            h_mean = lambda A: de.Average(A,'x','y')
         # Heat and salt fluxes
         Jt = -h_mean(dz(totT))(z=0)
         Js = -h_mean(dz(totS))(z=0)
