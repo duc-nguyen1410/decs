@@ -41,6 +41,9 @@ class ECSSolver:
         self.Neigen = (params or {}).get('Neigen', 50)
         # save updates of solution during the Newton iteration
         self.save_ecs_history = (params or {}).get('save_ecs_history', False)
+        #
+        self.save_log = (params or {}).get('save_log', True)
+        self.log_filename = (params or {}).get('log_filename', 'output.log')
 
     def G(self, x0, Tp, ax=0, ay=0, az=0):
         ''' Return sigma*F^Tp(x0) '''
@@ -354,7 +357,27 @@ class ECSSolver:
         if self.model.dist.comm.rank == 0:
             if not os.path.exists(self.odir):
                 os.mkdir(self.odir)
-        logger.info("Starting Newton solver ...")
+            if os.path.exists(self.odir+self.log_filename):
+                os.remove(self.odir+self.log_filename)
+            log_file = open(self.odir+self.log_filename, 'w', buffering=1)
+            log_file.writelines('---------------------------------\n')
+            log_file.writelines('--- Parameters ------------------\n')
+            log_file.writelines('---------------------------------\n')
+            for key, value in self.model.params.items():
+                log_file.writelines(f"{key}: {value}\n")
+            log_file.writelines(f"dim: {self.model.dim}\n")
+            log_file.writelines(f"sizes: {self.model.sizes}\n")
+            log_file.writelines(f"bounds: {self.model.bounds}\n")
+            log_file.writelines(f"bounded: {self.model.bounded}\n")
+            log_file.writelines(f"dealias: {self.model.dealias}\n")
+            log_file.writelines(f"mode: {self.model.mode}\n")
+            log_file.writelines(f"CFL: {self.model.use_CFL}\n")
+            if self.sigma.is_nontrivial():
+                log_file.writelines(f"symmetry: {self.sigma.print()}\n")
+
+            log_file.writelines('---------------------------------\n')
+            logger.info("Starting Newton solver ...")
+            log_file.writelines('Starting Newton solver ...\n')
         # Initial guess includes state and parameters
         xi = np.concatenate([x0, 
                             [Tp] if self.Tsearch else [], 
@@ -378,14 +401,21 @@ class ECSSolver:
             norm_b = np.linalg.norm(nonlinear_res)
             self.save_flow_properties(xi)
             if i==0:
-                logger.info(f"Iteration {i}, Residual norm: {norm_b}" \
+                logger.info(f"Initialization, Residual norm: {norm_b}" \
                             +f"{f", Tp: {xi[N_+self.Tsearch-1]}" if self.Tsearch else ""}" \
                             +f"{f", ax: {xi[N_+self.Tsearch+self.Rxsearch-1]}" if self.Rxsearch else ""}" \
                             +f"{f", ay: {xi[N_+self.Tsearch+self.Rxsearch+self.Rysearch-1]}" if self.Rysearch else ""}" \
                             +f"{f", az: {xi[N_+self.Tsearch+self.Rxsearch+self.Rysearch+self.Rzsearch-1]}" if self.Rzsearch else ""}")
-            
+                if self.model.dist.comm.rank == 0:
+                    log_file.writelines(f"Initialization, Residual norm: {norm_b}" \
+                                        +f"{f", Tp: {xi[N_+self.Tsearch-1]}" if self.Tsearch else ""}" \
+                                        +f"{f", ax: {xi[N_+self.Tsearch+self.Rxsearch-1]}" if self.Rxsearch else ""}" \
+                                        +f"{f", ay: {xi[N_+self.Tsearch+self.Rxsearch+self.Rysearch-1]}" if self.Rysearch else ""}" \
+                                        +f"{f", az: {xi[N_+self.Tsearch+self.Rxsearch+self.Rysearch+self.Rzsearch-1]}" if self.Rzsearch else ""}\n")
             if norm_b < self.tol:
                 logger.info("Convergence achieved!")
+                if self.model.dist.comm.rank == 0:
+                    log_file.writelines("Convergence achieved!\n")
                 success = True
                 # save the solution
                 self.model.set_state(xi[:N_])
@@ -416,7 +446,38 @@ class ECSSolver:
             nonlinear_res = self.NonlinearOperator(xi)
             norm_b = np.linalg.norm(nonlinear_res)
             logger.info(f"Iteration {i}, ||x||: {np.linalg.norm(xi[:N_])}, Residual: {norm_b}, GMRES error: {error}, trust radius: {tr}")
-            
+            if self.model.dist.comm.rank == 0:
+                log_file.writelines(f"Iteration {i}, Residual norm: {norm_b}, ||x||: {np.linalg.norm(xi[:N_])}, GMRES error: {error}, trust radius: {tr}" \
+                                    +f"{f", Tp: {xi[N_+self.Tsearch-1]}" if self.Tsearch else ""}" \
+                                    +f"{f", ax: {xi[N_+self.Tsearch+self.Rxsearch-1]}" if self.Rxsearch else ""}" \
+                                    +f"{f", ay: {xi[N_+self.Tsearch+self.Rxsearch+self.Rysearch-1]}" if self.Rysearch else ""}" \
+                                    +f"{f", az: {xi[N_+self.Tsearch+self.Rxsearch+self.Rysearch+self.Rzsearch-1]}" if self.Rzsearch else ""}\n")
+
+            # save T
+            if self.Tsearch:
+                T_file = open(self.odir+'T.txt', 'w')
+                T_file.writelines(str(xi[N_+self.Tsearch-1]))
+                T_file.close()
+
+            # save shift speeds: ax, ay , az
+            if self.Rxsearch:
+                ax_file = open(self.odir+'ax.txt', 'w')
+                ax_file.writelines(str(xi[N_+self.Tsearch+self.Rxsearch-1]))
+                ax_file.close()
+            if self.Rysearch:
+                ay_file = open(self.odir+'ay.txt', 'w')
+                ay_file.writelines(str(xi[N_+self.Tsearch+self.Rxsearch+self.Rysearch-1]))
+                ay_file.close()
+            if self.Rzsearch:
+                az_file = open(self.odir+'az.txt', 'w')
+                az_file.writelines(str(xi[N_+self.Tsearch+self.Rxsearch+self.Rysearch+self.Rzsearch-1]))
+                az_file.close()
+
+            # save tolerance
+            tol_file = open(self.odir+'tol.txt', 'w')
+            tol_file.writelines(str(norm_b))
+            tol_file.close()
+
         return xi, success, norm_b, np.linalg.norm(xi[:N_]), self.model.get_flow_properties()
     
 
