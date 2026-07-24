@@ -38,6 +38,7 @@ class FluidModel:
         self.evp_problem = None
         
         # CFL function
+        self.use_CFL = False
         self.CFL = None
 
         # Preview current state
@@ -327,11 +328,11 @@ class FluidModel:
         for field in self.fields:
             field['g'] += scale * np.random.standard_normal(field['g'].shape)
 
-    def set_CFL(self, solver, initial_dt=0.001, cadence=10, safety=0.5, threshold=0.1,  max_change=1.5, min_change=0.5, max_dt=0.1):
-        """ Set up the CFL condition for adaptive time-stepping. """
-        self.CFL = de.CFL(solver, initial_dt=initial_dt, cadence=cadence, safety=safety, threshold=threshold, 
-                          max_change=max_change, min_change=min_change, max_dt=max_dt)
-        self.CFL.add_velocity(self.fields[0]) # Assuming the first field is velocity; adjust if needed
+    # def set_CFL(self, solver, initial_dt=0.001, cadence=10, safety=0.5, threshold=0.1,  max_change=1.5, min_change=0.5, max_dt=0.1):
+    #     """ Set up the CFL condition for adaptive time-stepping. """
+    #     self.CFL = de.CFL(solver, initial_dt=initial_dt, cadence=cadence, safety=safety, threshold=threshold, 
+    #                       max_change=max_change, min_change=min_change, max_dt=max_dt)
+    #     self.CFL.add_velocity(self.fields[0]) # Assuming the first field is velocity; adjust if needed
 
     def solve_EVP(self, x0, N=20, target=1.0):
         """
@@ -378,7 +379,8 @@ class FluidModel:
         solver.iteration = 0
         solver.stop_wall_time = np.inf
         solver.stop_iteration = np.inf
-        if self.CFL is not None:
+        if self.use_CFL:
+            self.set_CFL(solver, initial_dt=self.init_dt)
             while solver.proceed:
                 dt = self.CFL.compute_timestep()
                 if solver.sim_time + dt > Tp:
@@ -392,6 +394,7 @@ class FluidModel:
         return self.get_state()
     def save_time_dependent_solution(self, x0, Tp:float, ax=0, ay=0, az=0):
         MPI.COMM_WORLD.Barrier()
+        logger.info("Saving time-dependent solutions.")
         solver = self.ivp_problem.build_solver(de.RK222)
         self.set_state(x0)
 
@@ -413,13 +416,21 @@ class FluidModel:
         solver.stop_wall_time = np.inf
         solver.stop_iteration = np.inf
 
-        # self.set_snapshots(solver=solver, sim_dt=sim_time/n_full_solution_steps)
-        # self.set_timehistory(solver=solver, properties=properties)
+        self.set_snapshots(solver=solver, sim_dt=sim_time/n_full_solution_steps)
+        self.set_timehistory(solver=solver, sim_dt=sim_time/n_full_solution_steps)
         
-        num_steps = int(sim_time/self.init_dt)
-        dt = sim_time/num_steps
-        for i in range(num_steps):
-            solver.step(dt)
+        if self.use_CFL:
+            self.set_CFL(solver, initial_dt=self.init_dt)
+            while solver.proceed:
+                dt = self.CFL.compute_timestep()
+                if solver.sim_time + dt > Tp:
+                    dt = Tp - solver.sim_time
+                solver.step(dt)
+        else:
+            num_steps = int(Tp/self.init_dt)
+            dt = Tp/num_steps
+            for i in range(num_steps):
+                solver.step(dt)
 
     
     def t_derivative(self, x, delta_T):
