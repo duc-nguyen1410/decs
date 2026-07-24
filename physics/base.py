@@ -184,7 +184,7 @@ class FluidModel:
         gathered_data = {}
         for field in self.fields:
             # Use the field name as the HDF5 dataset name
-            gathered_data[field.name] = field.allgather_data('g').real
+            gathered_data[field.name] = field.allgather_data('g').real # shape [dim][nx][ny][nz]
 
         if self.dist.comm.rank == 0:
             # --- HDF5 Path ---
@@ -196,7 +196,6 @@ class FluidModel:
                         if is_vector:
                             # Generic component naming: u0, u1, u2 
                             # Corresponds to (u, w) in 2D or (u, v, w) in 
-                            # print("shape of vector:", )
                             for i in range(data.shape[0]):
                                 f.create_dataset(f'{name}_{i}', data=data[i])
                         else:
@@ -226,7 +225,7 @@ class FluidModel:
                     ds.dim_attr = self.dim
                     coords = [basis.global_grid(self.dist, scale=self.dealias) for basis in self.bases]
                     coord_names = [basis.coord.name for basis in self.bases]
-                    # We reverse the coord_names for ParaView so the last dim is X
+                    # Reverse for C-order / NetCDF / ParaView standard [z, y, x]
                     coords = tuple(reversed(coords))
                     coord_names = tuple(reversed(coord_names))
                     
@@ -235,23 +234,25 @@ class FluidModel:
                         # x is 1st axis, y 2nd, z 3rd (standard Dedalus)
                         dim_size = g_data.size
                         ds.createDimension(c_name, dim_size)
-                        # print(f"{c_name} size={dim_size} shape={np.shape(g_data)}") # checked: correct
                         v = ds.createVariable(c_name, 'f8', (c_name,))
                         v[:] = g_data.flatten()
 
                     # Add Fields
+                    # Dedalus use shape [dim][nz][ny][nx]
                     for name, data in gathered_data.items():
-                        field_obj = next(obj for obj in self.fields if obj.name == name)
-                        if len(field_obj.tensorsig) > 0: # is vector
-                            for i in range(data.shape[0]):
+                        working_field = next(field for field in self.fields if field.name == name)
+                        is_vector = len(working_field.tensorsig) > 0
+                        if is_vector: # is vector
+                            for i in range(self.dim):
                                 var = ds.createVariable(f'{name}_{i}', 'f8', tuple(coord_names))
-                                var[:] = data[i].T
-                                # print(np.shape(data[i]))
+                                var[:] = data[i].T # Transpose spatial dimensions [nx, ny, nz] -> [nz, ny, nx]
                         else:
                             var = ds.createVariable(name, 'f8', tuple(coord_names))
-                            var[:] = data.T
+                            var[:] = data.T # Transpose spatial dimensions [nx, ny, nz] -> [nz, ny, nx]
             else:
                 raise ValueError(f"Unsupported file extension: {self.ext}")  
+        self.dist.comm.Barrier()
+
     def load_state(self, filename):
         """
         Load dealias-scaled grid data from a file
@@ -259,7 +260,6 @@ class FluidModel:
         import os
         filename = filename + self.ext
         logger.info(f"Loading state from {filename}")
-        # ext = os.path.splitext(filename)[1].lower()
         
         if self.ext == '.h5':
             # --- HDF5 Loading Logic ---
@@ -295,16 +295,19 @@ class FluidModel:
                     is_vector = len(field.tensorsig) > 0
                     if is_vector:
                         num_comp = self.dim
-                        # Reconstruct vector data
-                        # Shapes in .nc are (Nx, [Ny], Nz) because we renamed labels, not data
-                        comp_shape = ds.variables[f'{field.name}_0'].shape
-                        data = np.zeros((num_comp,) + comp_shape)
+                        # Get shape on disk: [nz, ny, nx] (or [nz, nx] in 2D)
+                        comp_shape_nc = ds.variables[f'{field.name}_0'].shape
+                        # Reconstruct components with original Dedalus layout: [num_comp, nx, ny, nz]
+                        # We transpose comp_shape_nc back to [nx, ny, nz]
+                        comp_shape_dedalus = comp_shape_nc[::-1]
+                        data = np.zeros((num_comp,) + comp_shape_dedalus)
                         for i in range(num_comp):
-                            data[i] = ds.variables[f'{field.name}_{i}'][:].T
+                            # Read [nz, ny, nx] and transpose back to [nx, ny, nz]
+                            data[i] = ds.variables[f'{field.name}_{i}'][:].T # saved data' shape is [nz][ny][nx]
                     else:
-                        # Scalar field
+                        # Read scalar field [nz, ny, nx] and transpose back to [nx, ny, nz]
                         data = ds.variables[field.name][:].T
-                    
+                    # Distribute global data back into Dedalus field using (Dim, Nx, [Ny], Nz)
                     field.load_from_global_grid_data(data)
         else:
             raise ValueError(f"Unsupported file extension: {self.ext}")  
