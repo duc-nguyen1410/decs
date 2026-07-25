@@ -256,19 +256,39 @@ class SaltFinger(DoubleDiffusion):
         for v in ['u', 'te', 'sa']:
             self.evp_problem.add_equation(f"integ({v}) = 0")
     def get_flow_properties(self):
+        ex = self.coords.unit_vector_fields(self.dist)[0]
         ez = self.coords.unit_vector_fields(self.dist)[-1]
         w = self.u @ ez
+        Ra = self.params['Ra']
+        Pr = self.params['Pr']
+        Rrho = self.params['Rrho']
+        tau = self.params['tau']
         # Nusselt and Sherwood numbers 
         Nu = 1 - de.Average(w*self.te)
-        Sh = 1 - de.Average(w*self.sa)/self.params['tau']
+        Sh = 1 - de.Average(w*self.sa)/tau
+        # Energy
+        grad_u = de.grad(self.u)
+        D = de.Average(Pr*(de.dot(grad_u @ ex, grad_u @ ex) + de.dot(grad_u @ ez, grad_u @ ez))) # Viscous dissipation
+        I = de.Average(Pr*Ra*(self.te-self.sa/Rrho)*w) # kinetic energy input by bouyancy
+        I_t = de.Average(Pr*Ra*self.te*w) # kinetic energy input by temperature-induced bouyancy
+        I_s = de.Average(-Pr*Ra*self.sa*w/Rrho) # kinetic energy input by salinity-induced bouyancy
         # .evaluate() returns a field object
         # ['g'] accesses the grid data
         # Nusselt and Sherwood numbers 
         Nu_val = Nu.evaluate()['g'].real
         Sh_val = Sh.evaluate()['g'].real
+        D_val = D.evaluate()['g'].real
+        I_val = I.evaluate()['g'].real
+        I_t_val = I_t.evaluate()['g'].real
+        I_s_val = I_s.evaluate()['g'].real
         if self.dist.comm.rank == 0:
             return {'Nu': float(Nu_val),
-                    'Sh': float(Sh_val)}
+                    'Sh': float(Sh_val),
+                    'D': float(D_val),
+                    'I': float(I_val),
+                    'I_t': float(I_t_val),
+                    'I_s': float(I_s_val)
+                    }
         else:
             return None
 
@@ -289,11 +309,21 @@ class SaltFinger(DoubleDiffusion):
         snapshots.add_task(self.u@ez, name='w')
         
     def set_timehistory(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
+        ex = self.coords.unit_vector_fields(self.dist)[0]
         ez = self.coords.unit_vector_fields(self.dist)[-1]
         w = self.u @ ez
+        Ra = self.params['Ra']
+        Pr = self.params['Pr']
+        Rrho = self.params['Rrho']
+        tau = self.params['tau']
         timehistory = solver.evaluator.add_file_handler(self.odir+'timehistory', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
         timehistory.add_task(1 - de.Average(w*self.te), name='Nu') # Nusselt number
-        timehistory.add_task(1 - de.Average(w*self.sa)/self.params['tau'], name='Sh') # Sherwood number
+        timehistory.add_task(1 - de.Average(w*self.sa)/tau, name='Sh') # Sherwood number
+        grad_u = de.grad(self.u)
+        timehistory.add_task(np.sum(de.Average(Pr*(de.dot(grad_u @ ex, grad_u @ ex) + de.dot(grad_u @ ez, grad_u @ ez)))), name='D') # Viscous dissipation
+        timehistory.add_task(de.Average(Pr*Ra*(self.te-self.sa/Rrho)*w), name='I') # kinetic energy input by bouyancy
+        timehistory.add_task(de.Average(Pr*Ra*self.te*w), name='I_t') # kinetic energy input by temperature-induced bouyancy
+        timehistory.add_task(de.Average(-Pr*Ra*self.sa*w/Rrho), name='I_s') # kinetic energy input by salinity-induced bouyancy
 
     def set_meanprofiles(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
         if self.dim == 2:
