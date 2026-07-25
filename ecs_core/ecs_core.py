@@ -374,7 +374,17 @@ class ECSSolver:
             log_file.writelines(f"CFL: {self.model.use_CFL}\n")
             if self.sigma.is_nontrivial():
                 log_file.writelines(f"symmetry: {self.sigma.print()}\n")
-
+            log_file.writelines(f"ecs_odir: {self.odir}\n")
+            log_file.writelines(f"tol: {self.tol}\n")
+            log_file.writelines(f"max_iter: {self.max_iter}\n")
+            log_file.writelines(f"initial Tp: {self.Tp}\n")
+            log_file.writelines(f"trust radius: {self.trust_radius}\n")
+            log_file.writelines(f"krylov_dim: {self.krylov_dim}\n")
+            log_file.writelines(f"krylov_dim_min: {self.krylov_dim_min}\n")
+            log_file.writelines(f"projectNeutralDrift: {self.projectNeutralDrift}\n")
+            log_file.writelines(f"computeStability: {self.computeStability}\n")
+            log_file.writelines(f"Neigen: {self.Neigen}\n")
+            log_file.writelines(f"save_ecs_history: {self.save_ecs_history}\n")
             log_file.writelines('---------------------------------\n')
             logger.info("Starting Newton solver ...")
             log_file.writelines('Starting Newton solver ...\n')
