@@ -552,9 +552,8 @@ class FluidModel:
         field.load_from_global_coeff_data(coeff_ref)
 
     def reflection_z(self,field):
-        
         if self.bounded: # Apply z -> -z reflection for bounded (Chebyshev) z-basis
-            # 1. Parity operator (-1)^n along the z-mode axis (last axis)
+            # Apply Chebyshev parity polynomial mapping: T_n(-z) = (-1)^n * T_n(z)
             # Get total number of Chebyshev modes along z
             Nz = field['c'].shape[-1]
             parity = (-1) ** np.arange(Nz)  # [1, -1, 1, -1, ...]
@@ -564,13 +563,18 @@ class FluidModel:
             view[-1] = Nz
             parity = parity.reshape(view)
 
-            # 2. Apply Chebyshev parity reflection z -> -z
+            # Apply Chebyshev parity reflection z -> -z
             field['c'] *= parity
 
-            # 3. Flip vector component if it's the vertical velocity (w)
+            # Change the sign of fields
             if len(field.tensorsig) > 0:
-                # Assuming field['c'][idx] contains components and vertical velocity is the last index
+                # Vector field (e.g., velocity u = (u, [v], w))
+                # Vertical velocity component (w) is odd under z -> -z
                 field['c'][-1] *= -1
+            else: 
+                # Scalar field (e.g., Temperature or Salinity)
+                # Flip sign if scalar fluctuation is antisymmetric about midplane
+                field['c'] *= -1
         else: # Use Fourier permutation for periodic bases.
             coeff = field.allgather_data('c')
             def build_reflection_perm_z(kz, tol=1e-12):
