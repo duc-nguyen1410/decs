@@ -372,6 +372,7 @@ class ECSSolver:
             log_file.writelines(f"dealias: {self.model.dealias}\n")
             log_file.writelines(f"mode: {self.model.mode}\n")
             log_file.writelines(f"CFL: {self.model.use_CFL}\n")
+            log_file.writelines(f"initial dt: {self.model.init_dt}\n")
             if self.sigma.is_nontrivial():
                 log_file.writelines(f"symmetry: {self.sigma.print()}\n")
             log_file.writelines(f"ecs_odir: {self.odir}\n")
