@@ -226,28 +226,88 @@ class BoundedQuasiStaticMagnetoConvection(MagnetoConvection):
             self.ivp_problem.add_equation("dz(Phi)(z='right') = 0")
     
     def get_flow_properties(self):
-        # ez = self.coords.unit_vector_fields(self.dist)[-1]
-        # w = self.w
-        # Ra = self.params['Ra']
-        # Pr = self.params['Pr']
-        # Q = self.params['Q']
+        ex = self.coords.unit_vector_fields(self.dist)[0]
+        ez = self.coords.unit_vector_fields(self.dist)[-1]
+        ux = self.u @ ex
+        w = self.u @ ez
+        Ra = self.params['Ra']
+        Pr = self.params['Pr']
+        Q = self.params['Q']
         #
         z, = self.dist.local_grids(self.bases[-1])
-        
         dz = lambda A: de.Differentiate(A, self.coords['z']) 
-        h_mean = lambda A: de.Average(A,'x')
+        if self.dim == 2:
+            h_mean = lambda A: de.Average(A,'x')
+        else:
+            h_mean = lambda A: de.Average(A,'x','y')
         # [1] plane Nusselt number
         Nu_p = 1-h_mean(dz(self.te))(z=0) # plane Nusselt number
         # [2] volume average
         L2_temp = np.sqrt(de.Average(self.te**2))
         # [3] 
+        grad_u = de.grad(self.u)
+        D = de.Average(np.sqrt(Pr/Ra)*(de.dot(grad_u @ ex, grad_u @ ex) + de.dot(grad_u @ ez, grad_u @ ez))) # Viscous dissipation
+        I = de.Average(self.te*w) # kinetic energy input by temperature-induced bouyancy
+        if self.dim == 2:
+            # J = -ux*ey
+            # Lorentz_force = J x ez = -ux*ex.
+            # Lorentz_force * u = -ux*ux
+            I_j = de.Average(-Q*np.sqrt(Pr/Ra)*ux*ux)
+        else: # 3D
+            grad_Phi = de.grad(self.Phi)
+            lap_Phi = de.div(grad_Phi)
+            # J is a 3D Vector
+            J = - grad_Phi + de.cross(self.u, ez) # quasi-static MHD Ohm’s law
+            Lorentz_force = de.cross(J, ez)
+            I_j = de.Average(Q*np.sqrt(Pr/Ra)*de.dot(Lorentz_force*self.u))
         # .evaluate() returns a field object
         # ['g'] accesses the grid data
         Nu_p_val = Nu_p.evaluate()['g'].real
         L2_temp_val = L2_temp.evaluate()['g'].real
-        # print("shape of Nu_p", np.shape(Nu_p_val))
+        D_val = D.evaluate()['g'].real
+        I_val = I.evaluate()['g'].real
+        I_j_val = I_j.evaluate()['g'].real
         if self.dist.comm.rank == 0:
             return {'Nu_p': float(Nu_p_val),
-                    'L2_temp': float(L2_temp_val)}
+                    'L2_temp': float(L2_temp_val),
+                    'D': float(D_val),
+                    'I': float(I_val),
+                    'I_j': float(I_j_val)}
         else:
             return None
+
+    def set_snapshots(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
+        snapshots = solver.evaluator.add_file_handler(self.odir+'snapshots', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
+        snapshots.add_task(self.u, name='u')
+        snapshots.add_task(self.te, name='te')
+        
+    def set_timehistory(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
+        ex = self.coords.unit_vector_fields(self.dist)[0]
+        ez = self.coords.unit_vector_fields(self.dist)[-1]
+        w = self.u @ ez
+        Ra = self.params['Ra']
+        Pr = self.params['Pr']
+        Q = self.params['Q']
+        if self.dim == 2:
+            h_mean = lambda A: de.Average(A,'x')
+        else:
+            h_mean = lambda A: de.Average(A,'x','y')
+        dz = lambda A: de.Differentiate(A, self.coords['z'])
+        z, = self.dist.local_grids(self.bases[-1])
+        timehistory = solver.evaluator.add_file_handler(self.odir+'timehistory', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
+        timehistory.add_task(1-h_mean(dz(self.te))(z=0), name='Nu') # Nusselt number
+        grad_u = de.grad(self.u)
+        timehistory.add_task(np.sum(de.Average(np.sqrt(Pr/Ra)*(de.dot(grad_u @ ex, grad_u @ ex) + de.dot(grad_u @ ez, grad_u @ ez)))), name='D') # Viscous dissipation
+        timehistory.add_task(de.Average(self.te*w), name='I') # kinetic energy input by bouyancy
+
+    def set_meanprofiles(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
+        if self.dim == 2:
+            h_mean = lambda A: de.Average(A,'x')
+        else:
+            h_mean = lambda A: de.Average(A,'x','y')
+        ex = self.coords.unit_vector_fields(self.dist)[0]
+        ez = self.coords.unit_vector_fields(self.dist)[-1]
+        meanprofiles = solver.evaluator.add_file_handler(self.odir+'meanprofiles', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
+        meanprofiles.add_task(h_mean(self.u@ex), name='u') # horizontal averaged x-axis velocity
+        meanprofiles.add_task(h_mean(self.u@ez), name='w') # horizontal averaged z-axis velocity, optional, becasue wm=0
+        meanprofiles.add_task(h_mean(self.te), name='te') # horizontal averaged temperature
