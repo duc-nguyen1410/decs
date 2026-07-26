@@ -303,10 +303,9 @@ class SaltFinger(DoubleDiffusion):
         ex = self.coords.unit_vector_fields(self.dist)[0]
         ez = self.coords.unit_vector_fields(self.dist)[-1]
         snapshots = solver.evaluator.add_file_handler(self.odir+'snapshots', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
-        snapshots.add_task(self.te, name='t')
-        snapshots.add_task(self.sa, name='s')
-        snapshots.add_task(self.u@ex, name='u')
-        snapshots.add_task(self.u@ez, name='w')
+        snapshots.add_task(self.te, name='te')
+        snapshots.add_task(self.sa, name='sa')
+        snapshots.add_task(self.u, name='u')
         
     def set_timehistory(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
         ex = self.coords.unit_vector_fields(self.dist)[0]
@@ -333,10 +332,9 @@ class SaltFinger(DoubleDiffusion):
         ex = self.coords.unit_vector_fields(self.dist)[0]
         ez = self.coords.unit_vector_fields(self.dist)[-1]
         meanprofiles = solver.evaluator.add_file_handler(self.odir+'meanprofiles', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
-        meanprofiles.add_task(h_mean(self.u@ex), name='u') # horizontal averaged x-axis velocity
-        meanprofiles.add_task(h_mean(self.u@ez), name='w') # horizontal averaged z-axis velocity, optional, becasue wm=0
-        meanprofiles.add_task(h_mean(self.te), name='t') # horizontal averaged temperature
-        meanprofiles.add_task(h_mean(self.sa), name='s') # horizontal averaged sanility
+        meanprofiles.add_task(h_mean(self.u), name='u') # horizontal averaged x-axis velocity
+        meanprofiles.add_task(h_mean(self.te), name='te') # horizontal averaged temperature
+        meanprofiles.add_task(h_mean(self.sa), name='sa') # horizontal averaged sanility
         
 ########################################################################################
 ########################################################################################
@@ -621,25 +619,101 @@ class ShearedDiffusiveConvection(DoubleDiffusion):
         self.ivp_problem.add_equation("integ(te) = 0") 
         self.ivp_problem.add_equation("integ(sa) = 0") 
     def get_flow_properties(self):
+        ex = self.coords.unit_vector_fields(self.dist)[0]
         ez = self.coords.unit_vector_fields(self.dist)[-1]
+        ux = self.u @ ex
         w = self.u @ ez
         Pr = self.params['Pr']
         Ra = self.params['Ra']
+        Lambda = self.params['Lambda']
         tau = self.params['tau']
+        Ri = self.params['Ri']
+        z, = self.dist.local_grids(self.bases[-1])
+        dz = lambda A: de.Differentiate(A, self.coords['z']) 
+        baru = self.dist.Field(bases=self.bases[-1])
+        A_s = np.sqrt((Lambda-1.0)/Ri)
+        baru['g'] = A_s*np.sin(2*np.pi*z)
         # Nusselt and Sherwood numbers 
         Nu = 1 + de.Average(w*self.te)*np.sqrt(Pr*Ra)
         Sh = 1 + de.Average(w*self.sa)*np.sqrt(Pr*Ra)/tau
+        grad_u = de.grad(self.u)
+        # D = D_base + D_fluc
+        # D_base = np.sqrt(Pr/Ra) * 2 * (np.pi**2) * (A_s**2)
+        # save D_fluc
+        D = np.sqrt(Pr/Ra) * de.Average(de.dot(grad_u @ ex, grad_u @ ex) + de.dot(grad_u @ ez, grad_u @ ez)) # Viscous dissipation, TODO: complete 3D calculation
+        I = de.Average((self.te-Lambda*self.sa)*w) # kinetic energy input by bouyancy
+        I_t = de.Average(self.te*w) # kinetic energy input by temperature-induced bouyancy
+        I_s = de.Average(-Lambda*self.sa*w) # kinetic energy input by salinity-induced bouyancy
+        I_shear = de.Average(-ux * w * dz(baru)) # kinetic energy input by background shear
+                
         # .evaluate() returns a field object
         # ['g'] accesses the grid data
         # Nusselt and Sherwood numbers 
         Nu_val = Nu.evaluate()['g'].real
         Sh_val = Sh.evaluate()['g'].real
+        D_val = D.evaluate()['g'].real
+        I_val = I.evaluate()['g'].real
+        I_t_val = I_t.evaluate()['g'].real
+        I_s_val = I_s.evaluate()['g'].real
+        I_shear_val = I_shear.evaluate()['g'].real
         if self.dist.comm.rank == 0:
             return {'Nu': float(Nu_val),
-                    'Sh': float(Sh_val)}
+                    'Sh': float(Sh_val),
+                    'D': float(D_val),
+                    'I_shear': float(I_shear_val),
+                    'I': float(I_val),
+                    'I_t': float(I_t_val),
+                    'I_s': float(I_s_val)}
         else:
             return None
+    def set_snapshots(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
+        snapshots = solver.evaluator.add_file_handler(self.odir+'snapshots', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
+        snapshots.add_task(self.u, name='u')
+        snapshots.add_task(self.te, name='te')
+        snapshots.add_task(self.sa, name='sa')
+        
+    def set_timehistory(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
+        ex = self.coords.unit_vector_fields(self.dist)[0]
+        ez = self.coords.unit_vector_fields(self.dist)[-1]
+        ux = self.u @ ex
+        w = self.u @ ez
+        Ra = self.params['Ra']
+        Pr = self.params['Pr']
+        Lambda = self.params['Lambda']
+        tau = self.params['tau']
+        Ri = self.params['Ri']
+        z, = self.dist.local_grids(self.bases[-1])
+        Lz = self.bases[-1].bounds[1]
+        dz = lambda A: de.Differentiate(A, self.coords['z']) 
+        baru = self.dist.Field(bases=self.bases[-1])
+        A_s = np.sqrt((Lambda-1.0)/Ri)
+        baru['g'] = A_s*np.sin(2*np.pi*z)
+        if self.dim == 2:
+            h_mean = lambda A: de.Average(A,'x')
+        else:
+            h_mean = lambda A: de.Average(A,'x','y')
+        timehistory = solver.evaluator.add_file_handler(self.odir+'timehistory', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
+        timehistory.add_task(1+np.sqrt(Pr*Ra)*de.Average(w*self.te), name='Nu') # Nusselt number
+        timehistory.add_task(1+np.sqrt(Pr*Ra)/tau*de.Average(w*self.sa), name='Sh') # Sherwood number
+        grad_u = de.grad(self.u)
+        # D = D_base + D_fluc
+        # D_base = np.sqrt(Pr/Ra) * 2 * (np.pi**2) * (A_s**2)
+        # save D_fluc
+        timehistory.add_task(np.sqrt(Pr/Ra) * de.Average(de.dot(grad_u @ ex, grad_u @ ex) + de.dot(grad_u @ ez, grad_u @ ez)), name='D') # Viscous dissipation
+        timehistory.add_task(de.Average(-ux * w * dz(baru)), name='I_shear') # kinetic energy input by background shear
+        timehistory.add_task(de.Average((self.te-Lambda*self.sa)*w), name='I') # kinetic energy input by bouyancy
+        timehistory.add_task(de.Average(self.te*w), name='I_t') # kinetic energy input by temperature-induced bouyancy
+        timehistory.add_task(de.Average(-Lambda*self.sa*w), name='I_s') # kinetic energy input by salinity-induced bouyancy
 
+    def set_meanprofiles(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
+        if self.dim == 2:
+            h_mean = lambda A: de.Average(A,'x')
+        else:
+            h_mean = lambda A: de.Average(A,'x','y')
+        meanprofiles = solver.evaluator.add_file_handler(self.odir+'meanprofiles', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
+        meanprofiles.add_task(h_mean(self.u), name='u') # horizontal averaged x-axis velocity
+        meanprofiles.add_task(h_mean(self.te), name='te') # horizontal averaged temperature
+        meanprofiles.add_task(h_mean(self.sa), name='sa') # horizontal averaged sanility
 
 ########################################################################################
 ########################################################################################
@@ -787,8 +861,8 @@ class WallShearedDiffusiveConvection(DoubleDiffusion):
     def set_snapshots(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
         snapshots = solver.evaluator.add_file_handler(self.odir+'snapshots', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
         snapshots.add_task(self.u, name='u')
-        snapshots.add_task(self.te, name='t')
-        snapshots.add_task(self.sa, name='s')
+        snapshots.add_task(self.te, name='te')
+        snapshots.add_task(self.sa, name='sa')
         
     def set_timehistory(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
         ex = self.coords.unit_vector_fields(self.dist)[0]
@@ -830,5 +904,5 @@ class WallShearedDiffusiveConvection(DoubleDiffusion):
             h_mean = lambda A: de.Average(A,'x','y')
         meanprofiles = solver.evaluator.add_file_handler(self.odir+'meanprofiles', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
         meanprofiles.add_task(h_mean(self.u), name='u') # horizontal averaged x-axis velocity
-        meanprofiles.add_task(h_mean(self.te), name='t') # horizontal averaged temperature
-        meanprofiles.add_task(h_mean(self.sa), name='s') # horizontal averaged sanility
+        meanprofiles.add_task(h_mean(self.te), name='te') # horizontal averaged temperature
+        meanprofiles.add_task(h_mean(self.sa), name='sa') # horizontal averaged sanility
