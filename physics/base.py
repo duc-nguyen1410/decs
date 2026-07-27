@@ -40,6 +40,9 @@ class FluidModel:
         # CFL function
         self.use_CFL = False
         self.CFL = None
+        self.save_snapshots = False
+        self.save_timehistory = True
+        self.save_meanprofiles = False
 
         # Preview current state
         self.preview_fig = None
@@ -419,8 +422,12 @@ class FluidModel:
         solver.stop_wall_time = np.inf
         solver.stop_iteration = np.inf
 
-        self.set_snapshots(solver=solver, sim_dt=sim_time/n_full_solution_steps)
-        self.set_timehistory(solver=solver, sim_dt=sim_time/n_full_solution_steps)
+        if self.save_snapshots:
+            self.set_snapshots(solver=solver, sim_dt=sim_time/n_full_solution_steps)
+        if self.save_timehistory:
+            self.set_timehistory(solver=solver, sim_dt=sim_time/n_full_solution_steps)
+        if self.save_meanprofiles:
+            self.set_meanprofiles(solver=solver, sim_dt=sim_time/n_full_solution_steps)
         
         if self.use_CFL:
             self.set_CFL(solver, initial_dt=self.init_dt)
