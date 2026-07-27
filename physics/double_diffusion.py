@@ -300,8 +300,6 @@ class SaltFinger(DoubleDiffusion):
     #     self.CFL.add_velocity(self.fields[0]) # Assuming the first field is velocity; adjust if needed
     
     def set_snapshots(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
-        ex = self.coords.unit_vector_fields(self.dist)[0]
-        ez = self.coords.unit_vector_fields(self.dist)[-1]
         snapshots = solver.evaluator.add_file_handler(self.odir+'snapshots', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
         snapshots.add_task(self.te, name='te')
         snapshots.add_task(self.sa, name='sa')
@@ -319,7 +317,7 @@ class SaltFinger(DoubleDiffusion):
         timehistory.add_task(1 - de.Average(w*self.te), name='Nu') # Nusselt number
         timehistory.add_task(1 - de.Average(w*self.sa)/tau, name='Sh') # Sherwood number
         grad_u = de.grad(self.u)
-        timehistory.add_task(np.sum(de.Average(Pr*(de.dot(grad_u @ ex, grad_u @ ex) + de.dot(grad_u @ ez, grad_u @ ez)))), name='D') # Viscous dissipation
+        timehistory.add_task(de.Average(Pr*(de.dot(grad_u @ ex, grad_u @ ex) + de.dot(grad_u @ ez, grad_u @ ez))), name='D') # Viscous dissipation
         timehistory.add_task(de.Average(Pr*Ra*(self.te-self.sa/Rrho)*w), name='I') # kinetic energy input by bouyancy
         timehistory.add_task(de.Average(Pr*Ra*self.te*w), name='I_t') # kinetic energy input by temperature-induced bouyancy
         timehistory.add_task(de.Average(-Pr*Ra*self.sa*w/Rrho), name='I_s') # kinetic energy input by salinity-induced bouyancy
@@ -329,8 +327,6 @@ class SaltFinger(DoubleDiffusion):
             h_mean = lambda A: de.Average(A,'x')
         else:
             h_mean = lambda A: de.Average(A,'x','y')
-        ex = self.coords.unit_vector_fields(self.dist)[0]
-        ez = self.coords.unit_vector_fields(self.dist)[-1]
         meanprofiles = solver.evaluator.add_file_handler(self.odir+'meanprofiles', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
         meanprofiles.add_task(h_mean(self.u), name='u') # horizontal averaged x-axis velocity
         meanprofiles.add_task(h_mean(self.te), name='te') # horizontal averaged temperature
@@ -419,33 +415,35 @@ class BoundedSaltFinger(DoubleDiffusion):
         # ns = self._get_base_namespace()
         # ex = ns['ex']
         # w = ns['w']
+        ex = self.coords.unit_vector_fields(self.dist)[0]
         ez = self.coords.unit_vector_fields(self.dist)[-1]
+        ux = self.u @ ex
         w = self.u @ ez
         Ra = self.params['Ra']
         Pr = self.params['Pr']
+        Rrho = self.params['Rrho']
         tau = self.params['tau']
         #
         z, = self.dist.local_grids(self.bases[-1])
         Lz = self.bases[-1].bounds[1]
         #
-        # baru = self.dist.Field(bases=(self.bases[-1])) # base flow
-        barT = self.dist.Field(bases=(self.bases[-1])) # base state of temperature: -y
-        barS = self.dist.Field(bases=(self.bases[-1])) # base state of temperature: -y
-        barT['g'] = -z
-        barS['g'] = -z
-        totT = barT + self.te
-        totS = barS + self.sa
         dz = lambda A: de.Differentiate(A, self.coords['z']) 
         if self.dim == 2:
             h_mean = lambda A: de.Average(A,'x')
         else:
             h_mean = lambda A: de.Average(A,'x','y')
         # Heat and salt fluxes
-        Jt = -h_mean(dz(totT))(z=0)
-        Js = -h_mean(dz(totS))(z=0)
+        Jt = 1-h_mean(dz(self.te))(z=0)
+        Js = 1-h_mean(dz(self.sa))(z=0)
         # Nusselt and Sherwood numbers 
-        Nu = h_mean(np.sqrt(Pr*Ra)*w*totT - dz(totT))(z=Lz/2)
-        Sh = h_mean(np.sqrt(Pr*Ra)/tau*w*totS - dz(totS))(z=Lz/2)
+        Nu = 1+h_mean(np.sqrt(Pr*Ra)*w*self.te - dz(self.te))(z=Lz/2)
+        Sh = 1+h_mean(np.sqrt(Pr*Ra)/tau*w*self.sa - dz(self.sa))(z=Lz/2)
+        # Energy
+        grad_u = de.grad(self.u)
+        D = de.Average(Pr*(de.dot(grad_u @ ex, grad_u @ ex) + de.dot(grad_u @ ez, grad_u @ ez))) # Viscous dissipation
+        I = de.Average(Pr*Ra*(self.te-self.sa/Rrho)*w) # kinetic energy input by bouyancy
+        I_t = de.Average(Pr*Ra*self.te*w) # kinetic energy input by temperature-induced bouyancy
+        I_s = de.Average(-Pr*Ra*self.sa*w/Rrho) # kinetic energy input by salinity-induced bouyancy
         # .evaluate() returns a field object
         # ['g'] accesses the grid data
         # Heat and salt fluxes
@@ -454,14 +452,63 @@ class BoundedSaltFinger(DoubleDiffusion):
         # Nusselt and Sherwood numbers 
         Nu_val = Nu.evaluate()['g'].real
         Sh_val = Sh.evaluate()['g'].real
+        D_val = D.evaluate()['g'].real
+        I_val = I.evaluate()['g'].real
+        I_t_val = I_t.evaluate()['g'].real
+        I_s_val = I_s.evaluate()['g'].real
         if self.dist.comm.rank == 0:
             return {'Jt': float(Jt_val),
                     'Js': float(Js_val),
                     'Nu': float(Nu_val),
-                    'Sh': float(Sh_val)}
+                    'Sh': float(Sh_val),
+                    'D': float(D_val),
+                    'I': float(I_val),
+                    'I_t': float(I_t_val),
+                    'I_s': float(I_s_val)}
         else:
             return None
+    def set_snapshots(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
+        snapshots = solver.evaluator.add_file_handler(self.odir+'snapshots', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
+        snapshots.add_task(self.te, name='te')
+        snapshots.add_task(self.sa, name='sa')
+        snapshots.add_task(self.u, name='u')
+        
+    def set_timehistory(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
+        ex = self.coords.unit_vector_fields(self.dist)[0]
+        ez = self.coords.unit_vector_fields(self.dist)[-1]
+        w = self.u @ ez
+        Ra = self.params['Ra']
+        Pr = self.params['Pr']
+        Rrho = self.params['Rrho']
+        tau = self.params['tau']
+        z, = self.dist.local_grids(self.bases[-1])
+        Lz = self.bases[-1].bounds[1]
+        dz = lambda A: de.Differentiate(A, self.coords['z']) 
+        if self.dim == 2:
+            h_mean = lambda A: de.Average(A,'x')
+        else:
+            h_mean = lambda A: de.Average(A,'x','y')
+        timehistory = solver.evaluator.add_file_handler(self.odir+'timehistory', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
+        timehistory.add_task(1 - h_mean(dz(self.te))(z=Lz/2), name='Jt')
+        timehistory.add_task(1 - h_mean(dz(self.sa))(z=Lz/2), name='Js')
+        timehistory.add_task(1 + h_mean(np.sqrt(Pr*Ra)*w*self.te - dz(self.te))(z=Lz/2), name='Nu') # Nusselt number
+        timehistory.add_task(1 + h_mean(np.sqrt(Pr*Ra)/tau*w*self.sa - dz(self.sa))(z=Lz/2), name='Sh') # Sherwood number
+        grad_u = de.grad(self.u)
+        timehistory.add_task(de.Average(Pr*(de.dot(grad_u @ ex, grad_u @ ex) + de.dot(grad_u @ ez, grad_u @ ez))), name='D') # Viscous dissipation
+        timehistory.add_task(de.Average(Pr*Ra*(self.te-self.sa/Rrho)*w), name='I') # kinetic energy input by bouyancy
+        timehistory.add_task(de.Average(Pr*Ra*self.te*w), name='I_t') # kinetic energy input by temperature-induced bouyancy
+        timehistory.add_task(de.Average(-Pr*Ra*self.sa*w/Rrho), name='I_s') # kinetic energy input by salinity-induced bouyancy
 
+    def set_meanprofiles(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
+        if self.dim == 2:
+            h_mean = lambda A: de.Average(A,'x')
+        else:
+            h_mean = lambda A: de.Average(A,'x','y')
+        meanprofiles = solver.evaluator.add_file_handler(self.odir+'meanprofiles', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
+        meanprofiles.add_task(h_mean(self.u), name='u') # horizontal averaged x-axis velocity
+        meanprofiles.add_task(h_mean(self.te), name='te') # horizontal averaged temperature
+        meanprofiles.add_task(h_mean(self.sa), name='sa') # horizontal averaged sanility
+        
 
 ########################################################################################
 ########################################################################################
