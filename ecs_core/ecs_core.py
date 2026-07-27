@@ -338,6 +338,7 @@ class ECSSolver:
                 for c_name, g_data in zip(coord_names, coords):
                     h5f.create_dataset(f'/{c_name}', data = g_data) 
                 h5f.close()
+            logger.info('Done!')
     def NewtonSolver(self, 
                     x0, 
                     Tsearch=False,
