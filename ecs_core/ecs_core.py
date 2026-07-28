@@ -45,7 +45,7 @@ class ECSSolver:
         self.save_log = (params or {}).get('save_log', True)
         self.log_filename = (params or {}).get('log_filename', 'output.log')
 
-    def G(self, x0, Tp, ax=0, ay=0, az=0):
+    def G(self, x0, Tp:float, ax:float=0, ay:float=0, az:float=0):
         ''' Return sigma*F^Tp(x0) '''
         x = self.model.F_Tp(x0, Tp)
         # apply a relative symmetry to determine traveling wave or relative periodic orbit
@@ -56,7 +56,7 @@ class ECSSolver:
         if self.sigma.is_nontrivial():
             x = self.model.apply_symmetry(x, self.sigma)
         return x
-    def DG(self, x_base, x_perturb, phi_base, Tp, ax=0, ay=0, az=0):
+    def DG(self, x_base, x_perturb, phi_base, Tp:float, ax:float=0, ay:float=0, az:float=0):
         ''' Return (F^Tp(x0+dx) - F^Tp(x0)) / ||dx|| '''
         norm_v = np.linalg.norm(x_perturb)
         if norm_v == 0:
@@ -65,7 +65,7 @@ class ECSSolver:
         # logger.info(f"Computing DG with epsilon: {epsilon}, ||x_perturb||: {norm_v}")
         array_init = x_base + epsilon*x_perturb
         # logger.info(f"Initial state ||x_base + epsilon*x_perturb||: {np.linalg.norm(array_init)}, ||x_base||: {np.linalg.norm(x_base)}")
-        array_final = self.G(array_init, Tp, ax=0, ay=0, az=0)
+        array_final = self.G(array_init, Tp, ax, ay, az)
         # logger.info(f"G computed, ||G(x_base + epsilon*x_perturb)||: {np.linalg.norm(array_final)}, ||G(x_base)||: {np.linalg.norm(phi_base)}")
         array_out = (array_final-phi_base)/epsilon
         # logger.info(f"DG output computed, ||DG||: {np.linalg.norm(array_out)}")
@@ -132,7 +132,7 @@ class ECSSolver:
         Hk[k] = np.linalg.norm(Qk)
         Qk = Qk/Hk[k]
         return Qk, Hk
-    def arnoldi_iteration(self, x_base, phi_base, T, ax, ay, az, r, n:int):
+    def arnoldi_iteration(self, x_base, phi_base, T:float, ax:float, ay:float, az:float, r, n:int):
         ''' Arnoldi iteration '''
         # Ensure starting vector is orthogonal to neutral direction
         def project_out(v):
@@ -145,6 +145,7 @@ class ECSSolver:
             gg1 = np.vdot(dudx_ref, dudx_ref)
             g1v = np.vdot(dudx_ref, v)
             projected_v -= dudx_ref * (g1v / gg1)
+
             if not self.model.bounded:
                 dudz_ref = self.model.z_derivative(x_base) # z-derivative
                 dudz_ref = dudz_ref / np.linalg.norm(dudz_ref) # normalization
