@@ -433,12 +433,12 @@ class FluidModel:
             self.set_CFL(solver, initial_dt=self.init_dt)
             while solver.proceed:
                 dt = self.CFL.compute_timestep()
-                if solver.sim_time + dt > Tp:
-                    dt = Tp - solver.sim_time
+                if solver.sim_time + dt > sim_time:
+                    dt = sim_time - solver.sim_time
                 solver.step(dt)
         else:
-            num_steps = int(Tp/self.init_dt)
-            dt = Tp/num_steps
+            num_steps = int(sim_time/self.init_dt)
+            dt = sim_time/num_steps
             for i in range(num_steps):
                 solver.step(dt)
 
