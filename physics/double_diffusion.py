@@ -305,7 +305,7 @@ class SaltFinger(DoubleDiffusion):
         snapshots.add_task(self.sa, name='sa')
         snapshots.add_task(self.u, name='u')
         
-    def set_timehistory(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
+    def set_flowproperties(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
         ex = self.coords.unit_vector_fields(self.dist)[0]
         ez = self.coords.unit_vector_fields(self.dist)[-1]
         w = self.u @ ez
@@ -313,14 +313,14 @@ class SaltFinger(DoubleDiffusion):
         Pr = self.params['Pr']
         Rrho = self.params['Rrho']
         tau = self.params['tau']
-        timehistory = solver.evaluator.add_file_handler(self.odir+'timehistory', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
-        timehistory.add_task(1 - de.Average(w*self.te), name='Nu') # Nusselt number
-        timehistory.add_task(1 - de.Average(w*self.sa)/tau, name='Sh') # Sherwood number
+        flowproperties = solver.evaluator.add_file_handler(self.odir+'flowproperties', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
+        flowproperties.add_task(1 - de.Average(w*self.te), name='Nu') # Nusselt number
+        flowproperties.add_task(1 - de.Average(w*self.sa)/tau, name='Sh') # Sherwood number
         grad_u = de.grad(self.u)
-        timehistory.add_task(de.Average(Pr*(de.dot(grad_u @ ex, grad_u @ ex) + de.dot(grad_u @ ez, grad_u @ ez))), name='D') # Viscous dissipation
-        timehistory.add_task(de.Average(Pr*Ra*(self.te-self.sa/Rrho)*w), name='I') # kinetic energy input by bouyancy
-        timehistory.add_task(de.Average(Pr*Ra*self.te*w), name='I_t') # kinetic energy input by temperature-induced bouyancy
-        timehistory.add_task(de.Average(-Pr*Ra*self.sa*w/Rrho), name='I_s') # kinetic energy input by salinity-induced bouyancy
+        flowproperties.add_task(de.Average(Pr*(de.dot(grad_u @ ex, grad_u @ ex) + de.dot(grad_u @ ez, grad_u @ ez))), name='D') # Viscous dissipation
+        flowproperties.add_task(de.Average(Pr*Ra*(self.te-self.sa/Rrho)*w), name='I') # kinetic energy input by bouyancy
+        flowproperties.add_task(de.Average(Pr*Ra*self.te*w), name='I_t') # kinetic energy input by temperature-induced bouyancy
+        flowproperties.add_task(de.Average(-Pr*Ra*self.sa*w/Rrho), name='I_s') # kinetic energy input by salinity-induced bouyancy
 
     def set_meanprofiles(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
         if self.dim == 2:
@@ -473,7 +473,7 @@ class BoundedSaltFinger(DoubleDiffusion):
         snapshots.add_task(self.sa, name='sa')
         snapshots.add_task(self.u, name='u')
         
-    def set_timehistory(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
+    def set_flowproperties(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
         ex = self.coords.unit_vector_fields(self.dist)[0]
         ez = self.coords.unit_vector_fields(self.dist)[-1]
         w = self.u @ ez
@@ -488,16 +488,16 @@ class BoundedSaltFinger(DoubleDiffusion):
             h_mean = lambda A: de.Average(A,'x')
         else:
             h_mean = lambda A: de.Average(A,'x','y')
-        timehistory = solver.evaluator.add_file_handler(self.odir+'timehistory', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
-        timehistory.add_task(1 - h_mean(dz(self.te))(z=Lz/2), name='Jt')
-        timehistory.add_task(1 - h_mean(dz(self.sa))(z=Lz/2), name='Js')
-        timehistory.add_task(1 + h_mean(np.sqrt(Pr*Ra)*w*self.te - dz(self.te))(z=Lz/2), name='Nu') # Nusselt number
-        timehistory.add_task(1 + h_mean(np.sqrt(Pr*Ra)/tau*w*self.sa - dz(self.sa))(z=Lz/2), name='Sh') # Sherwood number
+        flowproperties = solver.evaluator.add_file_handler(self.odir+'flowproperties', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
+        flowproperties.add_task(1 - h_mean(dz(self.te))(z=Lz/2), name='Jt')
+        flowproperties.add_task(1 - h_mean(dz(self.sa))(z=Lz/2), name='Js')
+        flowproperties.add_task(1 + h_mean(np.sqrt(Pr*Ra)*w*self.te - dz(self.te))(z=Lz/2), name='Nu') # Nusselt number
+        flowproperties.add_task(1 + h_mean(np.sqrt(Pr*Ra)/tau*w*self.sa - dz(self.sa))(z=Lz/2), name='Sh') # Sherwood number
         grad_u = de.grad(self.u)
-        timehistory.add_task(de.Average(Pr*(de.dot(grad_u @ ex, grad_u @ ex) + de.dot(grad_u @ ez, grad_u @ ez))), name='D') # Viscous dissipation
-        timehistory.add_task(de.Average(Pr*Ra*(self.te-self.sa/Rrho)*w), name='I') # kinetic energy input by bouyancy
-        timehistory.add_task(de.Average(Pr*Ra*self.te*w), name='I_t') # kinetic energy input by temperature-induced bouyancy
-        timehistory.add_task(de.Average(-Pr*Ra*self.sa*w/Rrho), name='I_s') # kinetic energy input by salinity-induced bouyancy
+        flowproperties.add_task(de.Average(Pr*(de.dot(grad_u @ ex, grad_u @ ex) + de.dot(grad_u @ ez, grad_u @ ez))), name='D') # Viscous dissipation
+        flowproperties.add_task(de.Average(Pr*Ra*(self.te-self.sa/Rrho)*w), name='I') # kinetic energy input by bouyancy
+        flowproperties.add_task(de.Average(Pr*Ra*self.te*w), name='I_t') # kinetic energy input by temperature-induced bouyancy
+        flowproperties.add_task(de.Average(-Pr*Ra*self.sa*w/Rrho), name='I_s') # kinetic energy input by salinity-induced bouyancy
 
     def set_meanprofiles(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
         if self.dim == 2:
@@ -719,7 +719,7 @@ class ShearedDiffusiveConvection(DoubleDiffusion):
         snapshots.add_task(self.te, name='te')
         snapshots.add_task(self.sa, name='sa')
         
-    def set_timehistory(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
+    def set_flowproperties(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
         ex = self.coords.unit_vector_fields(self.dist)[0]
         ez = self.coords.unit_vector_fields(self.dist)[-1]
         ux = self.u @ ex
@@ -739,18 +739,18 @@ class ShearedDiffusiveConvection(DoubleDiffusion):
             h_mean = lambda A: de.Average(A,'x')
         else:
             h_mean = lambda A: de.Average(A,'x','y')
-        timehistory = solver.evaluator.add_file_handler(self.odir+'timehistory', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
-        timehistory.add_task(1+np.sqrt(Pr*Ra)*de.Average(w*self.te), name='Nu') # Nusselt number
-        timehistory.add_task(1+np.sqrt(Pr*Ra)/tau*de.Average(w*self.sa), name='Sh') # Sherwood number
+        flowproperties = solver.evaluator.add_file_handler(self.odir+'flowproperties', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
+        flowproperties.add_task(1+np.sqrt(Pr*Ra)*de.Average(w*self.te), name='Nu') # Nusselt number
+        flowproperties.add_task(1+np.sqrt(Pr*Ra)/tau*de.Average(w*self.sa), name='Sh') # Sherwood number
         grad_u = de.grad(self.u)
         # D = D_base + D_fluc
         # D_base = np.sqrt(Pr/Ra) * 2 * (np.pi**2) * (A_s**2)
         # save D_fluc
-        timehistory.add_task(np.sqrt(Pr/Ra) * de.Average(de.dot(grad_u @ ex, grad_u @ ex) + de.dot(grad_u @ ez, grad_u @ ez)), name='D') # Viscous dissipation
-        timehistory.add_task(de.Average(-ux * w * dz(baru)), name='I_shear') # kinetic energy input by background shear
-        timehistory.add_task(de.Average((self.te-Lambda*self.sa)*w), name='I') # kinetic energy input by bouyancy
-        timehistory.add_task(de.Average(self.te*w), name='I_t') # kinetic energy input by temperature-induced bouyancy
-        timehistory.add_task(de.Average(-Lambda*self.sa*w), name='I_s') # kinetic energy input by salinity-induced bouyancy
+        flowproperties.add_task(np.sqrt(Pr/Ra) * de.Average(de.dot(grad_u @ ex, grad_u @ ex) + de.dot(grad_u @ ez, grad_u @ ez)), name='D') # Viscous dissipation
+        flowproperties.add_task(de.Average(-ux * w * dz(baru)), name='I_shear') # kinetic energy input by background shear
+        flowproperties.add_task(de.Average((self.te-Lambda*self.sa)*w), name='I') # kinetic energy input by bouyancy
+        flowproperties.add_task(de.Average(self.te*w), name='I_t') # kinetic energy input by temperature-induced bouyancy
+        flowproperties.add_task(de.Average(-Lambda*self.sa*w), name='I_s') # kinetic energy input by salinity-induced bouyancy
 
     def set_meanprofiles(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
         if self.dim == 2:
@@ -885,7 +885,7 @@ class ShearedDiffusiveConvection_Radko2016(DoubleDiffusion):
         snapshots.add_task(self.te, name='te')
         snapshots.add_task(self.sa, name='sa')
         
-    def set_timehistory(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
+    def set_flowproperties(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
         ex = self.coords.unit_vector_fields(self.dist)[0]
         ez = self.coords.unit_vector_fields(self.dist)[-1]
         ux = self.u @ ex
@@ -905,18 +905,18 @@ class ShearedDiffusiveConvection_Radko2016(DoubleDiffusion):
             h_mean = lambda A: de.Average(A,'x')
         else:
             h_mean = lambda A: de.Average(A,'x','y')
-        timehistory = solver.evaluator.add_file_handler(self.odir+'timehistory', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
-        timehistory.add_task(1+Pe*de.Average(w*self.te), name='Nu') # Nusselt number
-        timehistory.add_task(1+Pe/tau*de.Average(w*self.sa), name='Sh') # Sherwood number
+        flowproperties = solver.evaluator.add_file_handler(self.odir+'flowproperties', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
+        flowproperties.add_task(1+Pe*de.Average(w*self.te), name='Nu') # Nusselt number
+        flowproperties.add_task(1+Pe/tau*de.Average(w*self.sa), name='Sh') # Sherwood number
         grad_u = de.grad(self.u)
         # D = D_base + D_fluc
         # D_base = np.sqrt(Pr/Ra) * 2 * (np.pi**2) * (A_s**2)
         # save D_fluc
-        timehistory.add_task(Pr/Pe * de.Average(de.dot(grad_u @ ex, grad_u @ ex) + de.dot(grad_u @ ez, grad_u @ ez)), name='D') # Viscous dissipation
-        timehistory.add_task(de.Average(-ux * w * dz(baru)), name='I_shear') # kinetic energy input by background shear
-        timehistory.add_task((4*(np.pi**2)*Ri)/(Lambda-1)*de.Average((self.te-self.sa)*w), name='I') # kinetic energy input by bouyancy
-        timehistory.add_task((4*(np.pi**2)*Ri)/(Lambda-1)*de.Average(self.te*w), name='I_t') # kinetic energy input by temperature-induced bouyancy
-        timehistory.add_task(-(4*(np.pi**2)*Ri)/(Lambda-1)*de.Average(self.sa*w), name='I_s') # kinetic energy input by salinity-induced bouyancy
+        flowproperties.add_task(Pr/Pe * de.Average(de.dot(grad_u @ ex, grad_u @ ex) + de.dot(grad_u @ ez, grad_u @ ez)), name='D') # Viscous dissipation
+        flowproperties.add_task(de.Average(-ux * w * dz(baru)), name='I_shear') # kinetic energy input by background shear
+        flowproperties.add_task((4*(np.pi**2)*Ri)/(Lambda-1)*de.Average((self.te-self.sa)*w), name='I') # kinetic energy input by bouyancy
+        flowproperties.add_task((4*(np.pi**2)*Ri)/(Lambda-1)*de.Average(self.te*w), name='I_t') # kinetic energy input by temperature-induced bouyancy
+        flowproperties.add_task(-(4*(np.pi**2)*Ri)/(Lambda-1)*de.Average(self.sa*w), name='I_s') # kinetic energy input by salinity-induced bouyancy
 
     def set_meanprofiles(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
         if self.dim == 2:
@@ -1078,7 +1078,7 @@ class WallShearedDiffusiveConvection(DoubleDiffusion):
         snapshots.add_task(self.te, name='te')
         snapshots.add_task(self.sa, name='sa')
         
-    def set_timehistory(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
+    def set_flowproperties(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
         ex = self.coords.unit_vector_fields(self.dist)[0]
         ez = self.coords.unit_vector_fields(self.dist)[-1]
         ux = self.u @ ex
@@ -1096,20 +1096,20 @@ class WallShearedDiffusiveConvection(DoubleDiffusion):
             h_mean = lambda A: de.Average(A,'x')
         else:
             h_mean = lambda A: de.Average(A,'x','y')
-        timehistory = solver.evaluator.add_file_handler(self.odir+'timehistory', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
-        timehistory.add_task(1-h_mean(dz(self.te))(z=0), name='Jt') # heat flux at wall
-        timehistory.add_task(1-h_mean(dz(self.sa))(z=0), name='Js') # mass flux at wall
-        timehistory.add_task(1+h_mean(np.sqrt(Pr*Ra)*w*self.te - dz(self.te))(z=Lz/2), name='Nu') # Nusselt number
-        timehistory.add_task(1+h_mean(np.sqrt(Pr*Ra)/tau*w*self.sa - dz(self.sa))(z=Lz/2), name='Sh') # Sherwood number
+        flowproperties = solver.evaluator.add_file_handler(self.odir+'flowproperties', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
+        flowproperties.add_task(1-h_mean(dz(self.te))(z=0), name='Jt') # heat flux at wall
+        flowproperties.add_task(1-h_mean(dz(self.sa))(z=0), name='Js') # mass flux at wall
+        flowproperties.add_task(1+h_mean(np.sqrt(Pr*Ra)*w*self.te - dz(self.te))(z=Lz/2), name='Nu') # Nusselt number
+        flowproperties.add_task(1+h_mean(np.sqrt(Pr*Ra)/tau*w*self.sa - dz(self.sa))(z=Lz/2), name='Sh') # Sherwood number
         grad_u = de.grad(self.u)
-        timehistory.add_task(np.sqrt(Pr/Ra) * (1 + de.Average(de.dot(grad_u @ ex, grad_u @ ex) + de.dot(grad_u @ ez, grad_u @ ez))), name='D') # Viscous dissipation
+        flowproperties.add_task(np.sqrt(Pr/Ra) * (1 + de.Average(de.dot(grad_u @ ex, grad_u @ ex) + de.dot(grad_u @ ez, grad_u @ ez))), name='D') # Viscous dissipation
         tau_w = 1+0.5*(h_mean(dz(ux))(z=0)+h_mean(dz(ux))(z=Lz)) # wall-shear stress
         I_w = np.sqrt(Pr/Ra)*tau_w*Uw # kinetic energy input by wall-shear stress
-        timehistory.add_task(tau_w, name='tau_w') # wall-shear stress
-        timehistory.add_task(I_w, name='I_w') # kinetic energy input by wall-shear stress
-        timehistory.add_task(de.Average((self.te-Lambda*self.sa)*w), name='I') # kinetic energy input by bouyancy
-        timehistory.add_task(de.Average(self.te*w), name='I_t') # kinetic energy input by temperature-induced bouyancy
-        timehistory.add_task(de.Average(-Lambda*self.sa*w), name='I_s') # kinetic energy input by salinity-induced bouyancy
+        flowproperties.add_task(tau_w, name='tau_w') # wall-shear stress
+        flowproperties.add_task(I_w, name='I_w') # kinetic energy input by wall-shear stress
+        flowproperties.add_task(de.Average((self.te-Lambda*self.sa)*w), name='I') # kinetic energy input by bouyancy
+        flowproperties.add_task(de.Average(self.te*w), name='I_t') # kinetic energy input by temperature-induced bouyancy
+        flowproperties.add_task(de.Average(-Lambda*self.sa*w), name='I_s') # kinetic energy input by salinity-induced bouyancy
 
     def set_meanprofiles(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
         if self.dim == 2:

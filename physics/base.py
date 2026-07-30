@@ -41,7 +41,7 @@ class FluidModel:
         self.use_CFL = False
         self.CFL = None
         self.save_snapshots = False
-        self.save_timehistory = True
+        self.save_flowproperties = True
         self.save_meanprofiles = False
 
         # Preview current state
@@ -424,8 +424,8 @@ class FluidModel:
 
         if self.save_snapshots:
             self.set_snapshots(solver=solver, sim_dt=sim_time/n_full_solution_steps)
-        if self.save_timehistory:
-            self.set_timehistory(solver=solver, sim_dt=sim_time/n_full_solution_steps)
+        if self.save_flowproperties:
+            self.set_flowproperties(solver=solver, sim_dt=sim_time/n_full_solution_steps)
         if self.save_meanprofiles:
             self.set_meanprofiles(solver=solver, sim_dt=sim_time/n_full_solution_steps)
         

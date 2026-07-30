@@ -281,7 +281,7 @@ class BoundedQuasiStaticMagnetoConvection(MagnetoConvection):
         snapshots.add_task(self.u, name='u')
         snapshots.add_task(self.te, name='te')
         
-    def set_timehistory(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
+    def set_flowproperties(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
         ex = self.coords.unit_vector_fields(self.dist)[0]
         ez = self.coords.unit_vector_fields(self.dist)[-1]
         w = self.u @ ez
@@ -294,11 +294,11 @@ class BoundedQuasiStaticMagnetoConvection(MagnetoConvection):
             h_mean = lambda A: de.Average(A,'x','y')
         dz = lambda A: de.Differentiate(A, self.coords['z'])
         z, = self.dist.local_grids(self.bases[-1])
-        timehistory = solver.evaluator.add_file_handler(self.odir+'timehistory', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
-        timehistory.add_task(1-h_mean(dz(self.te))(z=0), name='Nu') # Nusselt number
+        flowproperties = solver.evaluator.add_file_handler(self.odir+'flowproperties', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
+        flowproperties.add_task(1-h_mean(dz(self.te))(z=0), name='Nu') # Nusselt number
         grad_u = de.grad(self.u)
-        timehistory.add_task(np.sum(de.Average(np.sqrt(Pr/Ra)*(de.dot(grad_u @ ex, grad_u @ ex) + de.dot(grad_u @ ez, grad_u @ ez)))), name='D') # Viscous dissipation
-        timehistory.add_task(de.Average(self.te*w), name='I') # kinetic energy input by bouyancy
+        flowproperties.add_task(np.sum(de.Average(np.sqrt(Pr/Ra)*(de.dot(grad_u @ ex, grad_u @ ex) + de.dot(grad_u @ ez, grad_u @ ez)))), name='D') # Viscous dissipation
+        flowproperties.add_task(de.Average(self.te*w), name='I') # kinetic energy input by bouyancy
 
     def set_meanprofiles(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
         if self.dim == 2:
