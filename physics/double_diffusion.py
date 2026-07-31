@@ -213,8 +213,14 @@ class SaltFinger(DoubleDiffusion):
         # Periodic Governing Equations nondimensionalized by thermal-diffusion-scaled velocity kappaT/H
         self.ivp_problem.add_equation("trace(grad(u)) + tau_p = 0")
         self.ivp_problem.add_equation("integ(p) = 0") 
-        self.ivp_problem.add_equation("dt(u) + grad(p) - Pr*lap(u) - Pr*Ra*(te-sa/Rrho)*ez + tau_u = - u@grad(u)")
-        self.ivp_problem.add_equation("dt(te) - lap(te) + w + tau_te = - u@grad(te)")
+        if 'stokes' in self.params and self.params['stokes']:
+            self.ivp_problem.add_equation("grad(p) - Pr*lap(u) - Pr*Ra*(te-sa/Rrho)*ez + tau_u = 0")
+        else:
+            self.ivp_problem.add_equation("dt(u) + grad(p) - Pr*lap(u) - Pr*Ra*(te-sa/Rrho)*ez + tau_u = - u@grad(u)")
+        if 'temperature_feedback' in self.params and self.params['temperature_feedback']:
+            self.ivp_problem.add_equation("- lap(te) + w + tau_te = 0")
+        else:
+            self.ivp_problem.add_equation("dt(te) - lap(te) + w + tau_te = - u@grad(te)")
         self.ivp_problem.add_equation("dt(sa) - tau*lap(sa) + w + tau_sa = - u@grad(sa)")
         # Integral constraints for floating zero-means
         for v in ['u', 'te', 'sa']:
