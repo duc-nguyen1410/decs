@@ -134,48 +134,101 @@ class ECSSolver:
         return Qk, Hk
     def arnoldi_iteration(self, x_base, phi_base, T:float, ax:float, ay:float, az:float, r, n:int):
         ''' Arnoldi iteration '''
+        neutral_basis = []
+        if self.projectNeutralDrift and np.linalg.norm(x_base) >= 1e-6:
+            # Spatial x-derivative
+            dudx = self.model.x_derivative(x_base)
+            norm_x = np.linalg.norm(dudx)
+            if norm_x > 1e-12:
+                neutral_basis.append(dudx / norm_x)
+
+            # Spatial z-derivative
+            if not self.model.bounded:
+                dudz = self.model.z_derivative(x_base)
+                norm_z = np.linalg.norm(dudz)
+                if norm_z > 1e-12:
+                    neutral_basis.append(dudz / norm_z)
+
+            # Time derivative
+            if self.Tsearch:
+                dudt = self.model.t_derivative(x_base, self.d_tol)
+                norm_t = np.linalg.norm(dudt)
+                if norm_t > 1e-12:
+                    neutral_basis.append(dudt / norm_t)
+
+            # Orthonormalize neutral directions against each other (Gram-Schmidt)
+            ortho_neutral = []
+            for u in neutral_basis:
+                for u_prev in ortho_neutral:
+                    u -= np.vdot(u_prev, u) * u_prev
+                norm_u = np.linalg.norm(u)
+                if norm_u > 1e-12:
+                    ortho_neutral.append(u / norm_u)
+            neutral_basis = ortho_neutral
+
         # Ensure starting vector is orthogonal to neutral direction
         def project_out(v):
-            if np.linalg.norm(x_base) < 1e-6:
-                return v
-            projected_v = v
-            
-            dudx_ref = self.model.x_derivative(x_base) # x-derivative
-            dudx_ref = dudx_ref / np.linalg.norm(dudx_ref) # normalization
-            gg1 = np.vdot(dudx_ref, dudx_ref)
-            g1v = np.vdot(dudx_ref, v)
-            projected_v -= dudx_ref * (g1v / gg1)
+            projected_v = v.copy()
 
-            if not self.model.bounded:
-                dudz_ref = self.model.z_derivative(x_base) # z-derivative
-                dudz_ref = dudz_ref / np.linalg.norm(dudz_ref) # normalization
-                gg2 = np.vdot(dudz_ref, dudz_ref)
-                g2v = np.vdot(dudz_ref, v)
-                projected_v -= dudz_ref * (g2v / gg2)
-            if self.Tsearch:
-                dudt_ref = self.model.t_derivative(x_base, self.d_tol) # time-derivative
-                dudt_ref = dudt_ref / np.linalg.norm(dudt_ref) # normalization
-                gg = np.vdot(dudt_ref, dudt_ref) # <dudt_ref, dudt_ref>
-                gv = np.vdot(dudt_ref, v) # <dudt_ref, v>
-                projected_v -= dudt_ref * (gv / gg)
+            # SYMMETRY PROJECTION ONTO V+
+            # if self.sigma.is_nontrivial():
+            #     Sv = self.model.apply_symmetry(projected_v, self.sigma)
+                # V-: anti-symmetric subspace
+                # Computes 0.5 * (I + S) v : project all V- subspaces modes to zero
+                # projected_v = 0.5 * (projected_v + Sv)  
+                # V+: symmetric subspace
+                # Computes 0.5 * (I - S) v : project all V+ subspaces modes to zero
+                # projected_v = 0.5 * (projected_v - Sv)  
+
+            # dudx_ref = self.model.x_derivative(x_base) # x-derivative
+            # dudx_ref = dudx_ref / np.linalg.norm(dudx_ref) # normalization
+            # gg1 = np.vdot(dudx_ref, dudx_ref)
+            # g1v = np.vdot(dudx_ref, v)
+            # projected_v -= dudx_ref * (g1v / gg1)
+
+            # if not self.model.bounded:
+            #     dudz_ref = self.model.z_derivative(x_base) # z-derivative
+            #     dudz_ref = dudz_ref / np.linalg.norm(dudz_ref) # normalization
+            #     gg2 = np.vdot(dudz_ref, dudz_ref)
+            #     g2v = np.vdot(dudz_ref, v)
+            #     projected_v -= dudz_ref * (g2v / gg2)
+            # if self.Tsearch:
+            #     dudt_ref = self.model.t_derivative(x_base, self.d_tol) # time-derivative
+            #     dudt_ref = dudt_ref / np.linalg.norm(dudt_ref) # normalization
+            #     gg = np.vdot(dudt_ref, dudt_ref) # <dudt_ref, dudt_ref>
+            #     gv = np.vdot(dudt_ref, v) # <dudt_ref, v>
+            #     projected_v -= dudt_ref * (gv / gg)
+
+            # Project out neutral drift directions
+            if self.projectNeutralDrift:
+                for u in neutral_basis:
+                    projected_v -= u * np.vdot(u, projected_v)
             return projected_v
         
-        if self.projectNeutralDrift:
-            r = project_out(r)
+        
+                    
+        # Arnoldi Initialization
+        r = project_out(r)
         Q = np.zeros((r.size, n+1))
         H = np.zeros((n+1, n))
         Q[:,0] = r/np.linalg.norm(r)
+        # Arnoldi Loop
         for k in range(1, n + 1):
+            q_in = Q[:, k-1]
             if self.projectNeutralDrift:
-                q_in = project_out(Q[:, k-1]) # Project input before applying L
+                q_in = project_out(q_in) # Project input before applying L
                 v = self.DG(x_base, q_in, phi_base, T, ax, ay, az) # Apply operator
                 v = project_out(v) # Project output
             else:
-                v = self.DG(x_base, Q[:, k - 1], phi_base, T, ax, ay, az)
-            for j in range(0, k): # Arnoldi orthogonalization
+                v = self.DG(x_base, q_in, phi_base, T, ax, ay, az)
+            # Modified Gram-Schmidt (MGS)
+            for j in range(0, k):
                 H[j, k-1] = np.vdot(Q[:,j], v)
                 v = v - H[j, k-1]*Q[:,j]
             H[k, k-1] = np.linalg.norm(v)
+            if H[k, k - 1] < 1e-12:
+                logger.info(f"Arnoldi Krylov subspace closed at step {k}")
+                break
             Q[:,k] = v/H[k, k-1]
         return Q, H
     def Hookstep(self, H_, beta_, k_, tr):
@@ -286,7 +339,8 @@ class ECSSolver:
             if self.model.dist.comm.rank == 0:
                 if not os.path.exists(self.odir+'stability/'):
                     os.mkdir(self.odir+'stability/')
-
+            if self.sigma.is_nontrivial():
+                self.sigma = Symmetry() # do not apply symmetry in linear stability analysis
             N_ = self.model.size()
             T_temp = x[N_+self.Tsearch-1] if self.Tsearch else self.Tp
             ax_temp = x[N_+self.Tsearch+self.Rxsearch-1] if self.Rxsearch else 0.0
