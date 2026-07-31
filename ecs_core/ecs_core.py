@@ -180,24 +180,6 @@ class ECSSolver:
                 # Computes 0.5 * (I - S) v : project all V+ subspaces modes to zero
                 # projected_v = 0.5 * (projected_v - Sv)  
 
-            # dudx_ref = self.model.x_derivative(x_base) # x-derivative
-            # dudx_ref = dudx_ref / np.linalg.norm(dudx_ref) # normalization
-            # gg1 = np.vdot(dudx_ref, dudx_ref)
-            # g1v = np.vdot(dudx_ref, v)
-            # projected_v -= dudx_ref * (g1v / gg1)
-
-            # if not self.model.bounded:
-            #     dudz_ref = self.model.z_derivative(x_base) # z-derivative
-            #     dudz_ref = dudz_ref / np.linalg.norm(dudz_ref) # normalization
-            #     gg2 = np.vdot(dudz_ref, dudz_ref)
-            #     g2v = np.vdot(dudz_ref, v)
-            #     projected_v -= dudz_ref * (g2v / gg2)
-            # if self.Tsearch:
-            #     dudt_ref = self.model.t_derivative(x_base, self.d_tol) # time-derivative
-            #     dudt_ref = dudt_ref / np.linalg.norm(dudt_ref) # normalization
-            #     gg = np.vdot(dudt_ref, dudt_ref) # <dudt_ref, dudt_ref>
-            #     gv = np.vdot(dudt_ref, v) # <dudt_ref, v>
-            #     projected_v -= dudt_ref * (gv / gg)
 
             # Project out neutral drift directions
             if self.projectNeutralDrift:
