@@ -321,6 +321,7 @@ class ECSSolver:
             if self.model.dist.comm.rank == 0:
                 if not os.path.exists(self.odir+'stability/'):
                     os.mkdir(self.odir+'stability/')
+            original_symmetry = self.sigma
             if self.sigma.is_nontrivial():
                 self.sigma = Symmetry() # do not apply symmetry in linear stability analysis
             N_ = self.model.size()
@@ -375,6 +376,8 @@ class ECSSolver:
                 for c_name, g_data in zip(coord_names, coords):
                     h5f.create_dataset(f'/{c_name}', data = g_data) 
                 h5f.close()
+            if original_symmetry.is_nontrivial():
+                self.sigma = original_symmetry
             logger.info('Done!')
     def NewtonSolver(self, 
                     x0, 
