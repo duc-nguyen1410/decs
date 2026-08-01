@@ -51,50 +51,49 @@ class FluidModel:
     
     def set_param(self, name, value):
         """Update a parameter and return True if a domain rebuild is needed."""
-        setattr(self, name, value)
-        self.params[name] = value
-        if name in self.params:
-            self.params[name] = value 
-            logger.info(f"{name} was updated to {self.params[name]}")
-        else:
-            logger.info(f"mu_name={name} is unkbown")
-        
-        rebuild_domain = False
-        # Check if we modified geometry
-        if name == 'Lx':
-            rebuild_domain = True
-            # If 2D (Lx, Lz), recreate the tuple with the new Lx
-            if len(self.bounds) == 2:
-                self.bounds = (value, self.bounds[1])
-            # If 3D (Lx, Ly, Lz)
-            elif len(self.bounds) == 3:
-                self.bounds = (value, self.bounds[1], self.bounds[2])
+        logger.info(f"Setting parameter {name} = {value}")
 
-        elif name == 'Ly' and len(self.bounds) == 3:
-            rebuild_domain = True
-            self.bounds = (self.bounds[0], value, self.bounds[2])
-        
-        elif name == 'Aspect' and len(self.bounds) == 3:
-            rebuild_domain = True
-            if len(self.bounds) == 2: # If 2D (Lx, Lz)
-                self.bounds = (value, self.bounds[1])
-            elif len(self.bounds) == 3: # If 3D (Lx, Ly, Lz)
-                self.bounds = (value, value, self.bounds[2])
+        # Define geometry parameters that control domain bounds
+        GEOMETRY_PARAMS = {'Lx', 'Ly', 'Lz', 'Aspect'}
 
-        elif name == 'Lz':
-            rebuild_domain = True
-            if len(self.bounds) == 2:
-                self.bounds = (self.bounds[0], value)
-            elif len(self.bounds) == 3:
-                self.bounds = (self.bounds[0], self.bounds[1], value)
-        
-        if rebuild_domain:
-            # Re-setup the domain/bases in the model
-            self.create_domain() # Or your specific domain setup function
-            # Re-initialize the Dedalus Problem with the new fields/bases
+        # Handle Geometry / Domain Parameters
+        if name in GEOMETRY_PARAMS:
+            bounds_list = list(self.bounds)
+
+            if name == 'Lx':
+                bounds_list[0] = value
+            elif name == 'Ly' and self.dim == 3:
+                bounds_list[1] = value
+            elif name == 'Lz':
+                bounds_list[-1] = value
+            elif name == 'Aspect':
+                lz = bounds_list[-1]
+                bounds_list[0] = value * lz
+                if self.dim == 3:
+                    bounds_list[1] = value * lz
+
+            # Apply new bounds tuple
+            self.bounds = tuple(bounds_list)
+
+            # Re-initialize Dedalus spatial grid and bases
+            self.create_domain()
             self.build_fields()
 
+        # Handle Physical Parameters (in self.params)
+        elif name in self.params:
+            self.params[name] = value
+            setattr(self, name, value)  # Update attribute so Dedalus equations see it
+
+        # Fallback for other existing instance attributes
+        elif hasattr(self, name):
+            setattr(self, name, value)
+
+        else:
+            raise KeyError(f"Parameter '{name}' is unknown (not in self.params or model attributes).")
+                
+        # Rebuild Dedalus problems with updated values/operators
         self.build_problems()
+        logger.info(f"Parameter '{name}' updated to {value}. Dedalus problems rebuilt.")
     
     def get_grid_shape(self):
         """
