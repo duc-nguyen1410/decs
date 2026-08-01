@@ -73,14 +73,27 @@ class Continuation:
         """Directly calls the solver without subprocess overhead."""
         logger.info("")
         self.set_parameter(mu_val)
-        
-        self.ECSSolver.odir = self.odir + f'search-{self.isearch}/'
-        self.ECSSolver.model.odir = self.ECSSolver.odir # update this for saving time-dependent solution later
+
+        current_search_dir = os.path.join(self.odir, f'search-{self.isearch}/')
+        self.ECSSolver.odir = current_search_dir
+        self.ECSSolver.model.odir = current_search_dir # update this for saving time-dependent solution later
         
         # Call your solver's main execution method
-        result = self.ECSSolver.NewtonSolver(x0=x_guess,Tp=self.Tp,ax=self.ax,ay=self.ay,az=self.az)
-        
-        self.isearch += 1
+        result = self.ECSSolver.NewtonSolver(x0=x_guess,
+                                             Tsearch=self.Tsearch,
+                                             Rxsearch=self.Rxsearch,
+                                             Rysearch=self.Rysearch,
+                                             Rzsearch=self.Rzsearch,
+                                             Tp=self.Tp,
+                                             ax=self.ax if self.Rxsearch else 0.0,
+                                             ay=self.ay if self.Rysearch else 0.0,
+                                             az=self.az if self.Rzsearch else 0.0)
+
+        # Extract success flag assuming result = (sol, success, res, norm, properties)
+        success = result[1]
+        if success:
+            self.isearch += 1
+            
         return result
 
     def save_flow_properties(self, mu, properties, filename="flow_properties.csv"):
@@ -116,52 +129,69 @@ class Continuation:
     def arc_length_continuation(self, mu_start, dmu, n_steps=50, mu_target=None):
         """Pseudo-arclength loop using direct class calls."""
         N_ = self.ECSSolver.model.size()
+        self.ECSSolver.Tsearch = self.Tsearch
+        self.ECSSolver.Rxsearch = self.Rxsearch
+        self.ECSSolver.Rysearch = self.Rysearch
+        self.ECSSolver.Rzsearch = self.Rzsearch
+        munorm = abs(self.mu_ref) if abs(self.mu_ref) > 1e-12 else abs(mu_start)
+        if munorm < 1e-12:
+            munorm = 1.0  # Avoid division by zero
         
         logger.info(f"Starting Arclength Continuation on {self.mu_name}...")
         if self.ECSSolver.model.dist.comm.rank == 0:
-            if not os.path.exists(self.odir):
-                os.mkdir(self.odir)
+            # if not os.path.exists(self.odir):
+            #     os.mkdir(self.odir)
+            os.makedirs(self.odir, exist_ok=True)
 
         # Initialize: Need 3 points to start the quadratic predictor
         current_mu = mu_start
         current_x = self.ECSSolver.model.get_state() # Start from solver's current state
 
         for i in range(3):
+            # solution = [x,[Tp],[ax],[ay],[az]]
             sol, success, res, norm, properties = self.step_continuation(current_x, current_mu)
             if not success:
                 raise RuntimeError(f"Failed to initialize continuation at mu={current_mu}")
             logger.info(f"Search {self.isearch-1}: Success | {self.mu_name} = {current_mu:.6f} | Res = {res:.2e}")
-            
+
+            # Extract only the state vector x (first N_ entries)
+            x_sol = sol[:N_].copy()
+
             # save current mu
             self.save_mu(current_mu)
-
             self.save_flow_properties(current_mu, properties)
 
             self.mu_history.append(current_mu)
-            self.x_history.append(sol[:N_].copy())
+            self.x_history.append(x_sol)
             self.norm_history.append(norm)
+
             if self.Tsearch:
-                self.Tp_history.append(sol[N_+self.Tsearch-1])
+                self.Tp = sol[N_+self.Tsearch-1]
+                self.Tp_history.append(self.Tp)
             if self.Rxsearch:
-                self.ax_history.append(sol[N_+self.Tsearch+self.Rxsearch-1])
+                self.ax = sol[N_+self.Tsearch+self.Rxsearch-1]
+                self.ax_history.append(self.ax)
             if self.Rysearch:
-                self.ay_history.append(sol[N_+self.Tsearch+self.Rxsearch+self.Rysearch-1])
+                self.ay = sol[N_+self.Tsearch+self.Rxsearch+self.Rysearch-1]
+                self.ay_history.append(self.ay)
             if self.Rzsearch:
-                self.az_history.append(sol[N_+self.Tsearch+self.Rxsearch+self.Rysearch+self.Rzsearch-1])
+                self.az = sol[N_+self.Tsearch+self.Rxsearch+self.Rysearch+self.Rzsearch-1]
+                self.az_history.append(self.az)
 
             if i == 0:
                 self.s_history.append(0.0)
             else:
                 ds_init = np.sqrt(np.linalg.norm(self.x_history[-1] - self.x_history[-2])**2 + 
-                                 (self.mu_history[-1] - self.mu_history[-2])**2)
+                                 ((self.mu_history[-1] - self.mu_history[-2])/munorm)**2)
                 self.s_history.append(self.s_history[-1] + ds_init)
             
             current_mu += dmu
-            current_x = sol.copy()
+            current_x = x_sol # update state vector x
 
         # Main Predictor-Corrector Loop
         ds = self.s_history[-1] - self.s_history[-2]
-        for step in range(n_steps-3):
+        step = 0
+        while step < (n_steps - 3):
             # Check if we've reached the target mu
             if mu_target is not None:
                 if (self.mu_history[-1] - mu_target) * (self.mu_history[-2] - mu_target) < 0:
@@ -177,45 +207,29 @@ class Continuation:
                     s_next = self.s_history[-1] + ds
                     mu_pred = quadraticInterpolate(self.mu_history[-3:], self.s_history[-3:], s_next)
                     x_pred = quadraticInterpolate(self.x_history[-3:], self.s_history[-3:], s_next)
-                    if self.Tsearch:
-                        Tnew = quadraticInterpolate(self.Tp_history[-3:], self.s_history[-3:], s_next)
-                        self.Tp = Tnew
-                    if self.Rxsearch:
-                        axnew = quadraticInterpolate(self.ax_history[-3:], self.s_history[-3:], s_next)
-                        self.ax = axnew
-                    if self.Rysearch:
-                        aynew = quadraticInterpolate(self.ay_history[-3:], self.s_history[-3:], s_next)
-                        self.ay = aynew
-                    if self.Rzsearch:
-                        aznew = quadraticInterpolate(self.az_history[-3:], self.s_history[-3:], s_next)
-                        self.az = aznew
+                    Tp_pred = quadraticInterpolate(self.Tp_history[-3:], self.s_history[-3:], s_next) if self.Tsearch else None
+                    ax_pred = quadraticInterpolate(self.ax_history[-3:], self.s_history[-3:], s_next) if self.Rxsearch else None
+                    ay_pred = quadraticInterpolate(self.ay_history[-3:], self.s_history[-3:], s_next) if self.Rysearch else None
+                    az_pred = quadraticInterpolate(self.az_history[-3:], self.s_history[-3:], s_next) if self.Rzsearch else None
                 else:
                     # Predictor using tangent control
                     dx = self.x_history[-1] - self.x_history[-2]
-                    dmu = self.mu_history[-1] - self.mu_history[-2]
-                    norm = np.sqrt(np.linalg.norm(dx)**2 + dmu**2)
-                    if norm < 1e-14:
+                    dmu_val = self.mu_history[-1] - self.mu_history[-2]
+                    tangent_norm = np.sqrt(np.linalg.norm(dx)**2 + (dmu_val/munorm)**2)
+                    if tangent_norm < 1e-14:
                         raise RuntimeError("Tangent vector collapsed.")
-                    tx = dx / norm
-                    tmu = dmu / norm
-                    x_pred = self.x_history[-1] + ds * tx
-                    mu_pred = self.mu_history[-1] + ds * tmu
-                    if self.Tsearch:
-                        dTp = self.Tp_history[-1] - self.Tp_history[-2]
-                        Tnew = self.Tp_history[-1] + ds * dTp / norm
-                        self.Tp = Tnew
-                    if self.Rxsearch:
-                        dax = self.ax_history[-1] - self.ax_history[-2]
-                        axnew = self.ax_history[-1] + ds * dax / norm
-                        self.ax = axnew
-                    if self.Rysearch:
-                        day = self.ay_history[-1] - self.ay_history[-2]
-                        aynew = self.ay_history[-1] + ds * day / norm
-                        self.ay = aynew
-                    if self.Rzsearch:
-                        daz = self.az_history[-1] - self.az_history[-2]
-                        aznew = self.az_history[-1] + ds * daz / norm
-                        self.az = aznew
+                    x_pred = self.x_history[-1] + ds * (dx / tangent_norm)
+                    mu_pred = self.mu_history[-1] + ds * (dmu_val / tangent_norm)
+                    Tp_pred = self.Tp_history[-1] + ds * (self.Tp_history[-1] - self.Tp_history[-2]) / tangent_norm if self.Tsearch else None
+                    ax_pred = self.ax_history[-1] + ds * (self.ax_history[-1] - self.ax_history[-2]) / tangent_norm if self.Rxsearch else None
+                    ay_pred = self.ay_history[-1] + ds * (self.ay_history[-1] - self.ay_history[-2]) / tangent_norm if self.Rysearch else None
+                    az_pred = self.az_history[-1] + ds * (self.az_history[-1] - self.az_history[-2]) / tangent_norm if self.Rzsearch else None
+
+                # Assign predicted aux values temporarily
+                if self.Tsearch: self.Tp = Tp_pred
+                if self.Rxsearch: self.ax = ax_pred
+                if self.Rysearch: self.ay = ay_pred
+                if self.Rzsearch: self.az = az_pred
                 guess_err = self.check_residual(x_pred, mu_pred)
 
                 logger.info(f"dsmin == {self.ds_min}")
@@ -234,53 +248,65 @@ class Continuation:
                 logger.info(f"guesserr    == {guess_err}")
                 logger.info(f"guesserrmax == {self.guess_error_max}")
 
-                # Check residual of the guess to decide if we need to adjust ds before correction
-                if self.guess_error_min <= guess_err <= self.guess_error_max:
-                    # Guess is "just right" - move to full solve
-                    break
-                elif guess_err < self.guess_error_min:
-                    # Guess is too good! We are being too conservative.
-                    # Increase ds for the NEXT step, but use this guess now.
-                    ds = min(ds * 1.5, self.ds_max)
-                    break
+                # Evaluate initial guess quality
+                if guess_err <= self.guess_error_max:
+                    break # Guess is acceptable, proceed to solve
                 else:
                     # Guess error is too high (Newton will likely fail)
                     # Shrink ds and re-predict within this adjustment loop
-                    ds = max(ds * (self.guesserrtarget / guess_err)**(1/3), self.ds_min)
-                    if ds == self.ds_min:
-                        break # Cannot shrink further, try solving anyway
+                    ds_new = max(ds * (self.guesserrtarget / guess_err)**(1/3), self.ds_min)
+                    if ds_new == ds: # Hit ds_min limit
+                        break # Reached ds_min limit, attempt solve anyway
+                    ds = ds_new
 
             # Correct (Direct Newton Call)
             sol, success, res, norm, properties = self.step_continuation(x_pred, mu_pred)
             
             if success:
+                x_sol = sol[:N_].copy()
                 # save current mu
                 self.save_mu(mu_pred)
                 self.save_flow_properties(mu_pred, properties)
 
                 self.mu_history.append(mu_pred)
-                self.x_history.append(sol[:N_].copy())
+                self.x_history.append(x_sol)
                 self.norm_history.append(norm)
+
                 if self.Tsearch:
-                    self.Tp_history.append(sol[N_+self.Tsearch-1])
+                    self.Tp = sol[N_+self.Tsearch-1]
+                    self.Tp_history.append(self.Tp)
                 if self.Rxsearch:
-                    self.ax_history.append(sol[N_+self.Tsearch+self.Rxsearch-1])
+                    self.ax = sol[N_+self.Tsearch+self.Rxsearch-1]
+                    self.ax_history.append(self.ax)
                 if self.Rysearch:
-                    self.ay_history.append(sol[N_+self.Tsearch+self.Rxsearch+self.Rysearch-1])
+                    self.ay = sol[N_+self.Tsearch+self.Rxsearch+self.Rysearch-1]
+                    self.ay_history.append(self.ay)
                 if self.Rzsearch:
-                    self.az_history.append(sol[N_+self.Tsearch+self.Rxsearch+self.Rysearch+self.Rzsearch-1])
+                    self.az = sol[N_+self.Tsearch+self.Rxsearch+self.Rysearch+self.Rzsearch-1]
+                    self.az_history.append(self.az)
                 
                 # Calculate actual arclength step taken
                 ds_actual = np.sqrt(np.linalg.norm(self.x_history[-1] - self.x_history[-2])**2 + 
-                                   (self.mu_history[-1] - self.mu_history[-2])**2)
+                                   ((self.mu_history[-1] - self.mu_history[-2])/munorm)**2)
                 self.s_history.append(self.s_history[-1] + ds_actual)
                 
                 logger.info(f"Search {self.isearch-1}: Success | {self.mu_name} = {mu_pred:.6f} | Res = {res:.2e}")
-                # increase step size if convergence is good, decrease if not
-                ds = min(ds * 1.3, self.ds_max)
+
+                # Modest step size growth (only if guess quality was very high)
+                if guess_err < self.guess_error_min:
+                    ds = min(ds * 1.15, self.ds_max)
+
+                step += 1  # Advance step counter only on success
             else:
                 logger.info(f"Step {step}: Failed. Reducing step size...")
-                ds = max(ds * 0.7, self.ds_min)
+                # if np.isclose(ds, self.ds_min):
+                #     raise RuntimeError(f"Continuation stuck: Newton failed at minimum step size ds_min={self.ds_min}")
+                # Restore attributes to last converged state
+                if self.Tsearch and self.Tp_history: self.Tp = self.Tp_history[-1]
+                if self.Rxsearch and self.ax_history: self.ax = self.ax_history[-1]
+                if self.Rysearch and self.ay_history: self.ay = self.ay_history[-1]
+                if self.Rzsearch and self.az_history: self.az = self.az_history[-1]
+                ds = max(ds * 0.5, self.ds_min)
                 
             
             
