@@ -40,6 +40,14 @@ class FluidModel:
         # CFL function
         self.use_CFL = False
         self.CFL = None
+        self.CFL_cadence = params.get('cadence', 10)
+        self.CFL_safety = params.get('safety', 0.5)
+        self.CFL_threshold = params.get('threshold', 0.05)
+        self.CFL_min_change = params.get('min_change', 0.5)
+        self.CFL_max_change = params.get('max_change', 1.5)
+        self.CFL_max_dt = params.get('max_dt', 0.1)
+
+        # Output options
         self.save_snapshots = False
         self.save_flowproperties = True
         self.save_meanprofiles = False
@@ -333,10 +341,10 @@ class FluidModel:
         for field in self.fields:
             field['g'] += scale * np.random.standard_normal(field['g'].shape)
 
-    def set_CFL(self, solver, initial_dt=0.001, cadence=10, safety=0.5, threshold=0.1,  max_change=1.5, min_change=0.5, max_dt=0.1):
+    def set_CFL(self, solver):
         """ Set up the CFL condition for adaptive time-stepping. """
-        self.CFL = de.CFL(solver, initial_dt=initial_dt, cadence=cadence, safety=safety, threshold=threshold, 
-                          max_change=max_change, min_change=min_change, max_dt=max_dt)
+        self.CFL = de.CFL(solver, initial_dt=self.init_dt, cadence=self.CFL_cadence, safety=self.CFL_safety, threshold=self.CFL_threshold, 
+                          max_change=self.CFL_max_change, min_change=self.CFL_min_change, max_dt=self.CFL_max_dt)
         self.CFL.add_velocity(self.fields[0]) # Assuming the first field is velocity; adjust if needed
 
     def solve_EVP(self, x0, N=20, target=1.0):
@@ -385,7 +393,7 @@ class FluidModel:
         solver.stop_wall_time = np.inf
         solver.stop_iteration = np.inf
         if self.use_CFL:
-            self.set_CFL(solver, initial_dt=self.init_dt)
+            self.set_CFL(solver)
             while solver.proceed:
                 dt = self.CFL.compute_timestep()
                 if solver.sim_time + dt > Tp:
@@ -429,7 +437,7 @@ class FluidModel:
             self.set_meanprofiles(solver=solver, sim_dt=sim_time/n_full_solution_steps)
         
         if self.use_CFL:
-            self.set_CFL(solver, initial_dt=self.init_dt)
+            self.set_CFL(solver)
             while solver.proceed:
                 dt = self.CFL.compute_timestep()
                 if solver.sim_time + dt > sim_time:
