@@ -16,10 +16,10 @@ class ECSSolver:
     def __init__(self, model, params=None):
         self.model = model
         #
-        self.Tsearch = (params or {}).get('Tsearch', False)
-        self.Rxsearch = (params or {}).get('Rxsearch', False)
-        self.Rysearch = (params or {}).get('Rysearch', False)
-        self.Rzsearch = (params or {}).get('Rzsearch', False)
+        self.Tsearch = (params or {}).get('Tsearch', 0)
+        self.Rxsearch = (params or {}).get('Rxsearch', 0)
+        self.Rysearch = (params or {}).get('Rysearch', 0)
+        self.Rzsearch = (params or {}).get('Rzsearch', 0)
         self.sigma = Symmetry()
         # Set default parameters for the solver
         self.odir = (params or {}).get('odir', 'ecs_output/')
@@ -27,8 +27,12 @@ class ECSSolver:
         self.tol = (params or {}).get('tol', 1e-6)
         self.max_iter = (params or {}).get('max_iter', 20)
         self.Tp = (params or {}).get('Tp', 0.2)
+        self.ax = (params or {}).get('ax', 0.0)
+        self.ay = (params or {}).get('ay', 0.0)
+        self.az = (params or {}).get('az', 0.0)
         #
-        self.d_tol = (params or {}).get('d_tol', 1e-7)
+        self.eps_x = (params or {}).get('eps_x', 1e-7)
+        self.eps_t = (params or {}).get('eps_t', 1e-6)
         self.gmres_min_error = (params or {}).get('gmres_min_error', 1e-10)
         self.trust_radius_min = (params or {}).get('trust_radius_min', 1e-4)
         self.trust_radius = (params or {}).get('trust_radius', 1.0)
@@ -61,7 +65,7 @@ class ECSSolver:
         norm_v = np.linalg.norm(x_perturb)
         if norm_v == 0:
             return np.zeros_like(x_perturb)
-        epsilon = self.d_tol / norm_v
+        epsilon = self.eps_x / norm_v
         # logger.info(f"Computing DG with epsilon: {epsilon}, ||x_perturb||: {norm_v}")
         array_init = x_base + epsilon*x_perturb
         # logger.info(f"Initial state ||x_base + epsilon*x_perturb||: {np.linalg.norm(array_init)}, ||x_base||: {np.linalg.norm(x_base)}")
@@ -75,53 +79,35 @@ class ECSSolver:
             (F^T(x0+dx) - F^T(x0)) / ||dx|| - dx
         '''
         N_ = self.model.size()
+        x0_curr, Tp_curr, ax_curr, ay_curr, az_curr = self.unpack_xi(xi)
+        delta_x, delta_T, delta_ax, delta_ay, delta_az = self.unpack_xi(xi_perturb)
         
-        T_temp, ax_temp, ay_temp, az_temp = self.Tp, 0.0, 0.0, 0.0
-        if self.Tsearch:
-            T_temp = xi[N_+self.Tsearch-1]
-            delta_T = xi_perturb[N_+self.Tsearch-1]
-        if self.Rxsearch:
-            ax_temp = xi[N_+self.Tsearch+self.Rxsearch-1]
-            delta_ax = xi_perturb[N_+self.Tsearch+self.Rxsearch-1]
-        if self.Rysearch:
-            ay_temp = xi[N_+self.Tsearch+self.Rxsearch+self.Rysearch-1]
-            delta_ay = xi_perturb[N_+self.Tsearch+self.Rxsearch+self.Rysearch-1]
-        if self.Rzsearch:
-            az_temp = xi[N_+self.Tsearch+self.Rxsearch+self.Rysearch+self.Rzsearch-1]
-            delta_az = xi_perturb[N_+self.Tsearch+self.Rxsearch+self.Rysearch+self.Rzsearch-1]
-        
-        x_base = np.copy(xi[:N_])
-        delta_x = np.copy(xi_perturb[:N_])
-
         array_out = np.zeros_like(xi)
-        array_out[:N_] = self.DG(x_base, delta_x, phi_base, T_temp, ax_temp, ay_temp, az_temp) - delta_x
-        # logger.info(f"Linear operator applied, ||DG||: {np.linalg.norm(array_out[:N_])}, ||delta_x||: {np.linalg.norm(delta_x)}")
+        array_out[:N_] = self.DG(x0_curr, delta_x, phi_base, Tp_curr, ax_curr, ay_curr, az_curr) - delta_x
         
         if self.Tsearch: # Sensitivity to T + Phase Condition for T
-            array_out[:N_] += self.model.t_derivative(phi_base, self.d_tol) * delta_T
-            array_out[N_+self.Tsearch-1] = np.matmul(np.conj(self.model.t_derivative(x_base, self.d_tol)), delta_x)
+            array_out[:N_] += self.model.t_derivative(phi_base, self.eps_t) * delta_T
+            array_out[N_+self.Tsearch-1] = np.matmul(np.conj(self.model.t_derivative(x0_curr, self.eps_t)), delta_x)
         if self.Rxsearch: # Sensitivity to shift + Phase Condition (fixing the wave in x)
             array_out[:N_] += self.model.x_derivative(phi_base) * delta_ax
-            array_out[N_+self.Tsearch+self.Rxsearch-1] = np.matmul(np.conj(self.model.x_derivative(x_base)), delta_x)
+            array_out[N_+self.Tsearch+self.Rxsearch-1] = np.matmul(np.conj(self.model.x_derivative(x0_curr)), delta_x)
         if self.Rysearch: # Sensitivity to shift + Phase Condition (fixing the wave in y)
             array_out[:N_] += self.model.y_derivative(phi_base) * delta_ay
-            array_out[N_+self.Tsearch+self.Rxsearch+self.Rysearch-1] = np.matmul(np.conj(self.model.y_derivative(x_base)), delta_x)
+            array_out[N_+self.Tsearch+self.Rxsearch+self.Rysearch-1] = np.matmul(np.conj(self.model.y_derivative(x0_curr)), delta_x)
         if self.Rzsearch: # Sensitivity to shift + Phase Condition (fixing the wave in z)
             array_out[:N_] += self.model.z_derivative(phi_base) * delta_az
-            array_out[N_+self.Tsearch+self.Rxsearch+self.Rysearch+self.Rzsearch-1] = np.matmul(np.conj(self.model.z_derivative(x_base)), delta_x)
+            array_out[N_+self.Tsearch+self.Rxsearch+self.Rysearch+self.Rzsearch-1] = np.matmul(np.conj(self.model.z_derivative(x0_curr)), delta_x)
         return array_out
     def NonlinearOperator(self, xi):
         ''' Return sigma*F(x) - x '''
         N_ = self.model.size()
+        x0_curr, Tp_curr, ax_curr, ay_curr, az_curr = self.unpack_xi(xi)
         xi_out = np.zeros_like(xi)
-        state = xi[:N_]
-        T_temp = xi[N_+self.Tsearch-1] if self.Tsearch else self.Tp
-        ax_temp = xi[N_+self.Tsearch+self.Rxsearch-1] if self.Rxsearch else 0.0
-        ay_temp = xi[N_+self.Tsearch+self.Rxsearch+self.Rysearch-1] if self.Rysearch else 0.0
-        az_temp = xi[N_+self.Tsearch+self.Rxsearch+self.Rysearch+self.Rzsearch-1] if self.Rzsearch else 0.0
-        F_state = self.G(state, T_temp, ax_temp, ay_temp, az_temp)
-        xi_out[:N_] = - F_state + state
-        return xi_out  # Residual for the state variables
+
+        F_state = self.G(x0_curr, Tp_curr, ax_curr, ay_curr, az_curr)
+        xi_out[:N_] = - F_state + x0_curr
+
+        return xi_out 
     def arnoldi_iteration_inner(self, xi_base, Q, phi_base, k:int):
         Qk = self.LinearOperator(xi_base, Q[:, k - 1], phi_base)
         # logger.info(f"Arnoldi iteration {k}, ||Qk|| before orthogonalization: {np.linalg.norm(Qk)}")
@@ -151,7 +137,7 @@ class ECSSolver:
 
             # Time derivative
             if self.Tsearch:
-                dudt = self.model.t_derivative(x_base, self.d_tol)
+                dudt = self.model.t_derivative(x_base, self.eps_t)
                 norm_t = np.linalg.norm(dudt)
                 if norm_t > 1e-12:
                     neutral_basis.append(dudt / norm_t)
@@ -234,49 +220,47 @@ class ECSSolver:
     def GMRES(self, xi_base, xi_pert, phi_base, b, kmax, tr):
         xk = np.copy(xi_pert)
         logger.info("Starting GMRES ...")
-        # logger.info(f"Initial perturbation norm: {np.linalg.norm(x_pert)}, Initial residual norm: {np.linalg.norm(b)}")
+
         r = self.LinearOperator(xi_base, xi_pert, phi_base) - b
         rho = np.linalg.norm(r)
         beta = rho
         b_norm = np.linalg.norm(b)
-        # logger.info(f"Initial GMRES residual norm: {rho}, ||b||: {b_norm}")
+        
         Q = np.zeros((xi_pert.size, kmax+1))
         H = np.zeros((kmax+1, kmax))
         
-        min_error = np.inf
-        min_vector = np.zeros(xi_pert.size)
-        
-        Q[:,0] = r/np.linalg.norm(r)
+        Q[:,0] = r/rho if rho > 0 else r
         best_k = 1
+        min_error = rho
+
         for k in range(1, kmax):
             Q[:,k], H[:k+1,k-1] = self.arnoldi_iteration_inner(xi_base, Q[:,0:k], phi_base, k)
-            # logger.info(f"Q[:,{k}] norm: {np.linalg.norm(Q[:,k])}, H[:{k+1},{k-1}] norm: {np.linalg.norm(H[:k+1,k-1])}")
+            
             res = self.Hookstep(H, beta, k, tr)
             rho = np.linalg.norm(res.fun)
             
-            # if MPI.COMM_WORLD.rank == 0:
-            #     print(".", end='', flush=True)
             min_error = rho
             xk = np.matmul(Q[:,0:k], res.x)
             logger.info(f"GMRES iteration {k}, residual norm: {rho}")
             best_k = k
             if self.krylov_dim_min <= k and rho < self.gmres_min_error:
                 break
+
         test = np.linalg.norm(self.NonlinearOperator(np.copy(xi_base)+xi_pert+xk))
-        # logger.info(f"Initial optimal residual norm: {test}, min GMRES residual norm: {min_error}")
         tr_local = tr
+
         while test > 0.99*b_norm and tr_local > self.trust_radius_min:
             res = self.Hookstep(H, beta, best_k, tr_local)
             xk = np.matmul(Q[:,0:(best_k)], res.x)
             min_error = np.linalg.norm(res.fun)
             test = np.linalg.norm(self.NonlinearOperator(np.copy(xi_base)+xi_pert+xk))
             tr_local = 0.5*tr_local
-            # logger.info(f"Hookstep-based optimal residual norm: {test}, min GMRES residual norm: {min_error}, trust radius: {tr_local}")
+            
         return xi_pert + xk, min_error, tr_local
+    
     def save_flow_properties(self, xi, filename="flow_properties.csv"):
         properties = self.model.get_flow_properties()
-        N_ = self.model.size()
-        # debug_x = self.model.get_state()
+        x0_curr, Tp_curr, ax_curr, ay_curr, az_curr = self.unpack_xi(xi)
         # logger.info(f"||x||: {np.linalg.norm(debug_x)}")
         if self.model.dist.comm.rank == 0:
             file_path = os.path.join(self.odir, filename)
@@ -286,28 +270,20 @@ class ECSSolver:
                 with open(file_path, mode='w') as header:
                     # Write header if file is new
                     header_line = ""
-                    if self.Tsearch:
-                        header_line = header_line + f"Tp, "
-                    if self.Rxsearch:
-                        header_line = header_line + f"ax, "
-                    if self.Rysearch:
-                        header_line = header_line + f"ay, "
-                    if self.Rzsearch:
-                        header_line = header_line + f"az, "
-                    header_line = header_line + ", ".join(keys)
+                    if self.Tsearch: header_line += f"Tp, "
+                    if self.Rxsearch: header_line += f"ax, "
+                    if self.Rysearch: header_line += f"ay, "
+                    if self.Rzsearch: header_line += f"az, "
+                    header_line += ", ".join(keys)
                     header.write(header_line + "\n")
             with open(file_path, mode='a') as f:
                 # Append data
                 values = []
-                if self.Tsearch:
-                    values = values + [f"{xi[N_+self.Tsearch-1]:.12f}"]
-                if self.Rxsearch:
-                    values = values + [f"{xi[N_+self.Tsearch+self.Rxsearch-1]:.12f}"]
-                if self.Rysearch:
-                    values = values + [f"{xi[N_+self.Tsearch+self.Rxsearch+self.Rysearch-1]:.12f}"]
-                if self.Rzsearch:
-                    values = values + [f"{xi[N_+self.Tsearch+self.Rxsearch+self.Rysearch+self.Rzsearch-1]:.12f}"]
-                values = values + [f"{float(properties[k]):.12f}" for k in keys]
+                if self.Tsearch: values += [f"{Tp_curr:.12f}"]
+                if self.Rxsearch: values += [f"{ax_curr:.12f}"]
+                if self.Rysearch: values += [f"{ay_curr:.12f}"]
+                if self.Rzsearch: values += [f"{az_curr:.12f}"]
+                values += [f"{float(properties[k]):.12f}" for k in keys]
                 f.write(", ".join(values) + "\n")
             
             # Also print to terminal for real-time monitoring
@@ -321,23 +297,21 @@ class ECSSolver:
             if self.model.dist.comm.rank == 0:
                 if not os.path.exists(self.odir+'stability/'):
                     os.mkdir(self.odir+'stability/')
+            x0_curr, Tp_curr, ax_curr, ay_curr, az_curr = self.unpack_xi(x)
             original_symmetry = self.sigma
             if self.sigma.is_nontrivial():
                 self.sigma = Symmetry() # do not apply symmetry in linear stability analysis
             N_ = self.model.size()
-            T_temp = x[N_+self.Tsearch-1] if self.Tsearch else self.Tp
-            ax_temp = x[N_+self.Tsearch+self.Rxsearch-1] if self.Rxsearch else 0.0
-            ay_temp = x[N_+self.Tsearch+self.Rxsearch+self.Rysearch-1] if self.Rysearch else 0.0
-            az_temp = x[N_+self.Tsearch+self.Rxsearch+self.Rysearch+self.Rzsearch-1] if self.Rzsearch else 0.0
-            phi_base = self.G(x[:N_], T_temp, ax_temp, ay_temp, az_temp)
+            
+            phi_base = self.G(x0_curr, Tp_curr, ax_curr, ay_curr, az_curr)
             # Floquet method
-            Q, H_ = self.arnoldi_iteration(x[:N_], phi_base, T_temp, ax_temp, ay_temp, az_temp, np.random.rand(N_), self.Neigen) # <-- Ne iterations
+            Q, H_ = self.arnoldi_iteration(x0_curr, phi_base, Tp_curr, ax_curr, ay_curr, az_curr, np.random.rand(N_), self.Neigen) # <-- Ne iterations
             H = H_[0:-1,:]
             # get eigenvalue and eigenvector results, these are Floquet multipliers
             eigenvalues, eigenvectors_ = scipy.linalg.eig(H) 
             eigenvalues_abs = np.abs(eigenvalues)
             eigenvectors = np.matmul(Q[:,0:-1], eigenvectors_)
-            growthrate = np.log(eigenvalues) / T_temp # convert to growth rate
+            growthrate = np.log(eigenvalues) / Tp_curr # convert to growth rate
 
             # Last row of H_ (h_{m+1,m})
             h_last = H_[-1, :]  # 1 x m
@@ -354,7 +328,7 @@ class ECSSolver:
             eigenvectors = eigenvectors[:, idx]
             res = res[idx]
 
-            if MPI.COMM_WORLD.rank == 0:
+            if self.model.dist.comm.rank == 0:
                 # save Floquet multiplier
                 scipy.io.mmwrite(self.odir+'stability/eigenvalues.mtx', eigenvalues.reshape(1, -1)) # Eigenvalues; .mtx = Matrix Market format
                 # save growth rate
@@ -365,7 +339,7 @@ class ECSSolver:
             coords = [basis.global_grid(self.model.dist, scale=self.model.dealias) for basis in self.model.bases]
             coord_names = [basis.coord.name for basis in self.model.bases]
             unstable = np.where(growthrate.real > 0)[0]
-            if MPI.COMM_WORLD.rank == 0 and unstable.size > 0:
+            if self.model.dist.comm.rank == 0 and unstable.size > 0:
                 eigenvectors_unstable = eigenvectors[:, unstable]
                 eigenvalues_unstable = eigenvalues[unstable]
                 growthrate_unstable = growthrate[unstable]
@@ -379,6 +353,26 @@ class ECSSolver:
             if original_symmetry.is_nontrivial():
                 self.sigma = original_symmetry
             logger.info('Done!')
+    def unpack_xi(self, xi):
+        """ Safely unpacks state vector x0 and active parameters from xi. """
+        N_ = self.model.size()
+        x0 = xi[:N_]
+        idx = N_
+        
+        Tp = xi[idx] if self.Tsearch else self.Tp
+        if self.Tsearch: idx += 1
+            
+        ax = xi[idx] if self.Rxsearch else self.ax
+        if self.Rxsearch: idx += 1
+            
+        ay = xi[idx] if self.Rysearch else self.ay
+        if self.Rysearch: idx += 1
+            
+        az = xi[idx] if self.Rzsearch else self.az
+        if self.Rzsearch: idx += 1
+            
+        return x0, Tp, ax, ay, az  
+     
     def NewtonSolver(self, 
                     x0, 
                     Tsearch=False,
@@ -389,12 +383,17 @@ class ECSSolver:
                     ax = 0.0, 
                     ay = 0.0,
                     az = 0.0):
-        self.Tsearch = Tsearch
-        self.Rxsearch = Rxsearch
-        self.Rysearch = Rysearch
-        self.Rzsearch = Rzsearch
+        self.Tsearch = 1 if Tsearch else 0
+        self.Rxsearch = 1 if Rxsearch else 0
+        self.Rysearch = 1 if Rysearch else 0
+        self.Rzsearch = 1 if Rzsearch else 0
         self.Tp = Tp
+        self.ax = ax if Rxsearch else 0.0
+        self.ay = ay if Rysearch else 0.0
+        self.az = az if Rzsearch else 0.0
         N_ = self.model.size()
+        if np.size(x0) != N_:
+            raise ValueError(f"Initial guess x0 has size {np.size(x0)}, but expected size is {N_}.")
         if self.model.dist.comm.rank == 0:
             if not os.path.exists(self.odir):
                 os.mkdir(self.odir)
@@ -433,18 +432,24 @@ class ECSSolver:
             log_file.writelines('---------------------------------\n')
             logger.info("Starting Newton solver ...")
             log_file.writelines('Starting Newton solver ...\n')
-        # Initial guess includes state and parameters
-        xi = np.concatenate([x0, 
-                            [Tp] if self.Tsearch else [], 
-                            [ax] if self.Rxsearch else [], 
-                            [ay] if self.Rysearch else [],
-                            [az] if self.Rzsearch else []]) 
+        # Build initial xi vector cleanly
+        xi_list = list(x0)
+        if self.Tsearch: xi_list.append(Tp)
+        if self.Rxsearch: xi_list.append(ax)
+        if self.Rysearch: xi_list.append(ay)
+        if self.Rzsearch: xi_list.append(az)
+        xi = np.array(xi_list)       
         
         xi_pert = np.zeros_like(xi)
         success = False
+
         for i in range(self.max_iter):
-            # logger.info("\n")
-            self.model.set_state(xi[:N_])
+            # Extract current state & parameters cleanly
+            x0_curr, Tp_curr, ax_curr, ay_curr, az_curr = self.unpack_xi(xi)
+            # Keep self parameters in sync
+            self.Tp, self.ax, self.ay, self.az = Tp_curr, ax_curr, ay_curr, az_curr
+
+            self.model.set_state(x0_curr)
             if self.save_ecs_history:
                 # save the solution at each iteration for post-analysis of the convergence process if needed
                 self.model.save_state(self.odir + f'solution_iter_{i}')
@@ -455,83 +460,74 @@ class ECSSolver:
             nonlinear_res = self.NonlinearOperator(xi)
             norm_b = np.linalg.norm(nonlinear_res)
             self.save_flow_properties(xi)
+
+            # Build clean log parameter string
+            param_str = ""
+            if self.Tsearch:  param_str += f", Tp: {Tp_curr}"
+            if self.Rxsearch: param_str += f", ax: {ax_curr}"
+            if self.Rysearch: param_str += f", ay: {ay_curr}"
+            if self.Rzsearch: param_str += f", az: {az_curr}"
+
             if i==0:
-                logger.info(f"Initialization, Residual norm: {norm_b}" \
-                            +f"{f", Tp: {xi[N_+self.Tsearch-1]}" if self.Tsearch else ""}" \
-                            +f"{f", ax: {xi[N_+self.Tsearch+self.Rxsearch-1]}" if self.Rxsearch else ""}" \
-                            +f"{f", ay: {xi[N_+self.Tsearch+self.Rxsearch+self.Rysearch-1]}" if self.Rysearch else ""}" \
-                            +f"{f", az: {xi[N_+self.Tsearch+self.Rxsearch+self.Rysearch+self.Rzsearch-1]}" if self.Rzsearch else ""}")
+                logger.info(f"Initialization, Residual norm: {norm_b}{param_str}")
                 if self.model.dist.comm.rank == 0:
-                    log_file.writelines(f"Initialization, Residual norm: {norm_b}" \
-                                        +f"{f", Tp: {xi[N_+self.Tsearch-1]}" if self.Tsearch else ""}" \
-                                        +f"{f", ax: {xi[N_+self.Tsearch+self.Rxsearch-1]}" if self.Rxsearch else ""}" \
-                                        +f"{f", ay: {xi[N_+self.Tsearch+self.Rxsearch+self.Rysearch-1]}" if self.Rysearch else ""}" \
-                                        +f"{f", az: {xi[N_+self.Tsearch+self.Rxsearch+self.Rysearch+self.Rzsearch-1]}" if self.Rzsearch else ""}\n")
+                    log_file.writelines(f"Initialization, Residual norm: {norm_b}{param_str}\n")
             if norm_b < self.tol:
                 logger.info("Convergence achieved!")
                 if self.model.dist.comm.rank == 0:
                     log_file.writelines("Convergence achieved!\n")
                 success = True
                 # save the solution
-                self.model.set_state(xi[:N_])
+                self.model.set_state(x0_curr)
                 self.model.save_state(self.odir + 'solution')
-                # save best Tp
-
-                # save best symmetry
 
                 # save time-dependent data
                 if self.Tsearch or self.Rxsearch or self.Rysearch or self.Rzsearch:
-                    self.model.save_time_dependent_solution(xi[:N_],
-                                                            xi[N_+self.Tsearch-1] if self.Tsearch else Tp,
-                                                            xi[N_+self.Tsearch+self.Rxsearch-1] if self.Rxsearch else ax,
-                                                            xi[N_+self.Tsearch+self.Rxsearch+self.Rysearch-1] if self.Rysearch else ay,
-                                                            xi[N_+self.Tsearch+self.Rxsearch+self.Rysearch+self.Rzsearch-1] if self.Rzsearch else az)
+                    self.model.save_time_dependent_solution(x0_curr, Tp_curr, ax_curr, ay_curr, az_curr)
                 # compute stability
                 if self.computeStability:
                     self.stability(xi)
                 break
-            
-            phi_base = self.G(xi[:N_], 
-                              xi[N_+self.Tsearch-1] if self.Tsearch else self.Tp, 
-                              xi[N_+self.Tsearch+self.Rxsearch-1] if self.Rxsearch else ax,
-                              xi[N_+self.Tsearch+self.Rxsearch+self.Rysearch-1] if self.Rysearch else ay,
-                              xi[N_+self.Tsearch+self.Rxsearch+self.Rysearch+self.Rzsearch-1] if self.Rzsearch else az)
+
+            # Evaluate base map G with explicit parameters
+            phi_base = self.G(x0_curr, Tp_curr, ax_curr, ay_curr, az_curr)
+
             dxi, error, tr = self.GMRES(xi, xi_pert, phi_base, nonlinear_res, self.krylov_dim, self.trust_radius)
+
             xi += dxi # Update the solution
+
+            # Re-unpack updated parameters after step
+            x0_curr, Tp_curr, ax_curr, ay_curr, az_curr = self.unpack_xi(xi)
+            self.Tp, self.ax, self.ay, self.az = Tp_curr, ax_curr, ay_curr, az_curr
+
             nonlinear_res = self.NonlinearOperator(xi)
             norm_b = np.linalg.norm(nonlinear_res)
-            logger.info(f"Iteration {i}, ||x||: {np.linalg.norm(xi[:N_])}, Residual: {norm_b}, GMRES error: {error}, trust radius: {tr}")
+
+            param_str = ""
+            if self.Tsearch:  param_str += f", Tp: {Tp_curr}"
+            if self.Rxsearch: param_str += f", ax: {ax_curr}"
+            if self.Rysearch: param_str += f", ay: {ay_curr}"
+            if self.Rzsearch: param_str += f", az: {az_curr}"
+            logger.info(f"Iteration {i}, ||x||: {np.linalg.norm(x0_curr)}, Residual: {norm_b}, GMRES error: {error}, trust radius: {tr}{param_str}")
             if self.model.dist.comm.rank == 0:
-                log_file.writelines(f"Iteration {i}, Residual norm: {norm_b}, ||x||: {np.linalg.norm(xi[:N_])}, GMRES error: {error}, trust radius: {tr}" \
-                                    +f"{f", Tp: {xi[N_+self.Tsearch-1]}" if self.Tsearch else ""}" \
-                                    +f"{f", ax: {xi[N_+self.Tsearch+self.Rxsearch-1]}" if self.Rxsearch else ""}" \
-                                    +f"{f", ay: {xi[N_+self.Tsearch+self.Rxsearch+self.Rysearch-1]}" if self.Rysearch else ""}" \
-                                    +f"{f", az: {xi[N_+self.Tsearch+self.Rxsearch+self.Rysearch+self.Rzsearch-1]}" if self.Rzsearch else ""}\n")
+                log_file.writelines(f"Iteration {i}, Residual norm: {norm_b}, ||x||: {np.linalg.norm(x0_curr)}, GMRES error: {error}, trust radius: {tr}{param_str}\n")
 
-            # save T
+            # Save individual parameter files
             if self.Tsearch:
-                T_file = open(self.odir+'T.txt', 'w')
-                T_file.writelines(str(xi[N_+self.Tsearch-1]))
-                T_file.close()
-
-            # save shift speeds: ax, ay , az
+                with open(self.odir + 'T.txt', 'w') as f:
+                    f.write(str(Tp_curr))
             if self.Rxsearch:
-                ax_file = open(self.odir+'ax.txt', 'w')
-                ax_file.writelines(str(xi[N_+self.Tsearch+self.Rxsearch-1]))
-                ax_file.close()
+                with open(self.odir + 'ax.txt', 'w') as f:
+                    f.write(str(ax_curr))
             if self.Rysearch:
-                ay_file = open(self.odir+'ay.txt', 'w')
-                ay_file.writelines(str(xi[N_+self.Tsearch+self.Rxsearch+self.Rysearch-1]))
-                ay_file.close()
+                with open(self.odir + 'ay.txt', 'w') as f:
+                    f.write(str(ay_curr))
             if self.Rzsearch:
-                az_file = open(self.odir+'az.txt', 'w')
-                az_file.writelines(str(xi[N_+self.Tsearch+self.Rxsearch+self.Rysearch+self.Rzsearch-1]))
-                az_file.close()
+                with open(self.odir + 'az.txt', 'w') as f:
+                    f.write(str(az_curr))
 
-            # save tolerance
-            tol_file = open(self.odir+'tol.txt', 'w')
-            tol_file.writelines(str(norm_b))
-            tol_file.close()
+            with open(self.odir + 'tol.txt', 'w') as f:
+                f.write(str(norm_b))
 
         return xi, success, norm_b, np.linalg.norm(xi[:N_]), self.model.get_flow_properties()
     
