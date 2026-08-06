@@ -31,6 +31,7 @@ class Continuation:
         self.ECSSolver = ECSSolver
         # main settings
         self.mu_name = (params or {}).get('mu_name', 'Lx') #
+        self.continuation_type = (params or {}).get('continuation_type', 'arclength') # 'natural' or 'arclength'
         self.odir = (params or {}).get('odir', './')
         self.Tsearch = (params or {}).get('Tsearch', False)
         self.Rxsearch = (params or {}).get('Rxsearch', False)
@@ -126,8 +127,8 @@ class Continuation:
                             [self.az] if self.Rzsearch else []])  
         nonlinear_res = self.ECSSolver.NonlinearOperator(xi)
         return np.linalg.norm(nonlinear_res)
-    def arc_length_continuation(self, mu_start, dmu, n_steps=50, mu_target=None):
-        """Pseudo-arclength loop using direct class calls."""
+    def run_continuation(self, mu_start, dmu, n_steps=50, mu_target=None):
+        """ Run the natural/arclength continuation process. """
         N_ = self.ECSSolver.model.size()
         self.ECSSolver.Tsearch = self.Tsearch
         self.ECSSolver.Rxsearch = self.Rxsearch
@@ -137,10 +138,8 @@ class Continuation:
         if munorm < 1e-12:
             munorm = 1.0  # Avoid division by zero
         
-        logger.info(f"Starting Arclength Continuation on {self.mu_name}...")
+        logger.info(f"Starting {self.continuation_type.capitalize()} Continuation on {self.mu_name}...")
         if self.ECSSolver.model.dist.comm.rank == 0:
-            # if not os.path.exists(self.odir):
-            #     os.mkdir(self.odir)
             os.makedirs(self.odir, exist_ok=True)
 
         # Initialize: Need 3 points to start the quadratic predictor
@@ -202,28 +201,73 @@ class Continuation:
             # Inner adjustment loop: Find a decent initial guess
             for iadjust in range(self.Ndsadjust):
                 # Predict next point
-                if self.predictor == 'quadratic':
-                    # Predictor using quadratic interpolation in arclength space
-                    s_next = self.s_history[-1] + ds
-                    mu_pred = quadraticInterpolate(self.mu_history[-3:], self.s_history[-3:], s_next)
-                    x_pred = quadraticInterpolate(self.x_history[-3:], self.s_history[-3:], s_next)
-                    Tp_pred = quadraticInterpolate(self.Tp_history[-3:], self.s_history[-3:], s_next) if self.Tsearch else None
-                    ax_pred = quadraticInterpolate(self.ax_history[-3:], self.s_history[-3:], s_next) if self.Rxsearch else None
-                    ay_pred = quadraticInterpolate(self.ay_history[-3:], self.s_history[-3:], s_next) if self.Rysearch else None
-                    az_pred = quadraticInterpolate(self.az_history[-3:], self.s_history[-3:], s_next) if self.Rzsearch else None
+                if self.continuation_type == "natural":
+                    # ==========================================
+                    # Natural Parameter Continuation Predictor
+                    # ==========================================
+                    dmu_step = ds  # Reusing ds variable as the step size for mu, or use a dedicated dmu
+
+                    mu_pred = self.mu_history[-1] + dmu_step
+
+                    # Linear extrapolation of x with respect to mu
+                    dmu_prev = self.mu_history[-1] - self.mu_history[-2]
+                    if abs(dmu_prev) < 1e-14:
+                        raise RuntimeError("Parameter step collapsed in natural continuation.")
+
+                    dx_dmu = (self.x_history[-1] - self.x_history[-2]) / dmu_prev
+                    x_pred = self.x_history[-1] + dx_dmu * dmu_step
+
+                    # Optional variables extrapolation w.r.t mu
+                    if self.Tsearch:
+                        dTp_dmu = (self.Tp_history[-1] - self.Tp_history[-2]) / dmu_prev
+                        Tp_pred = self.Tp_history[-1] + dTp_dmu * dmu_step
+                    else:
+                        Tp_pred = None
+
+                    if self.Rxsearch:
+                        dax_dmu = (self.ax_history[-1] - self.ax_history[-2]) / dmu_prev
+                        ax_pred = self.ax_history[-1] + dax_dmu * dmu_step
+                    else:
+                        ax_pred = None
+
+                    if self.Rysearch:
+                        day_dmu = (self.ay_history[-1] - self.ay_history[-2]) / dmu_prev
+                        ay_pred = self.ay_history[-1] + day_dmu * dmu_step
+                    else:
+                        ay_pred = None
+
+                    if self.Rzsearch:
+                        daz_dmu = (self.az_history[-1] - self.az_history[-2]) / dmu_prev
+                        az_pred = self.az_history[-1] + daz_dmu * dmu_step
+                    else:
+                        az_pred = None
+
                 else:
-                    # Predictor using tangent control
-                    dx = self.x_history[-1] - self.x_history[-2]
-                    dmu_val = self.mu_history[-1] - self.mu_history[-2]
-                    tangent_norm = np.sqrt(np.linalg.norm(dx)**2 + (dmu_val/munorm)**2)
-                    if tangent_norm < 1e-14:
-                        raise RuntimeError("Tangent vector collapsed.")
-                    x_pred = self.x_history[-1] + ds * (dx / tangent_norm)
-                    mu_pred = self.mu_history[-1] + ds * (dmu_val / tangent_norm)
-                    Tp_pred = self.Tp_history[-1] + ds * (self.Tp_history[-1] - self.Tp_history[-2]) / tangent_norm if self.Tsearch else None
-                    ax_pred = self.ax_history[-1] + ds * (self.ax_history[-1] - self.ax_history[-2]) / tangent_norm if self.Rxsearch else None
-                    ay_pred = self.ay_history[-1] + ds * (self.ay_history[-1] - self.ay_history[-2]) / tangent_norm if self.Rysearch else None
-                    az_pred = self.az_history[-1] + ds * (self.az_history[-1] - self.az_history[-2]) / tangent_norm if self.Rzsearch else None
+                    # ==========================================
+                    # Arclength Continuation Predictors
+                    # ==========================================
+                    if self.predictor == 'quadratic':
+                        # Predictor using quadratic interpolation in arclength space
+                        s_next = self.s_history[-1] + ds
+                        mu_pred = quadraticInterpolate(self.mu_history[-3:], self.s_history[-3:], s_next)
+                        x_pred = quadraticInterpolate(self.x_history[-3:], self.s_history[-3:], s_next)
+                        Tp_pred = quadraticInterpolate(self.Tp_history[-3:], self.s_history[-3:], s_next) if self.Tsearch else None
+                        ax_pred = quadraticInterpolate(self.ax_history[-3:], self.s_history[-3:], s_next) if self.Rxsearch else None
+                        ay_pred = quadraticInterpolate(self.ay_history[-3:], self.s_history[-3:], s_next) if self.Rysearch else None
+                        az_pred = quadraticInterpolate(self.az_history[-3:], self.s_history[-3:], s_next) if self.Rzsearch else None
+                    else:
+                        # Predictor using tangent control
+                        dx = self.x_history[-1] - self.x_history[-2]
+                        dmu_val = self.mu_history[-1] - self.mu_history[-2]
+                        tangent_norm = np.sqrt(np.linalg.norm(dx)**2 + (dmu_val/munorm)**2)
+                        if tangent_norm < 1e-14:
+                            raise RuntimeError("Tangent vector collapsed.")
+                        x_pred = self.x_history[-1] + ds * (dx / tangent_norm)
+                        mu_pred = self.mu_history[-1] + ds * (dmu_val / tangent_norm)
+                        Tp_pred = self.Tp_history[-1] + ds * (self.Tp_history[-1] - self.Tp_history[-2]) / tangent_norm if self.Tsearch else None
+                        ax_pred = self.ax_history[-1] + ds * (self.ax_history[-1] - self.ax_history[-2]) / tangent_norm if self.Rxsearch else None
+                        ay_pred = self.ay_history[-1] + ds * (self.ay_history[-1] - self.ay_history[-2]) / tangent_norm if self.Rysearch else None
+                        az_pred = self.az_history[-1] + ds * (self.az_history[-1] - self.az_history[-2]) / tangent_norm if self.Rzsearch else None
 
                 # Assign predicted aux values temporarily
                 if self.Tsearch: self.Tp = Tp_pred
