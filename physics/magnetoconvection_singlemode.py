@@ -49,7 +49,8 @@ class MagnetoConvection_SingleMode(FluidModel):
             raise ValueError("Sizes and bounds in single-mode ansatz must be length 1.")
         
         # single-mode ansatz must use complex-valued fields
-        self.dist = de.Distributor(self.coords, dtype=np.complex128)
+        if self.dist is None:
+            self.dist = de.Distributor(self.coords, dtype=np.complex128)
 
         if self.bounded:
             # Use Chebyshev for bounded domains
@@ -245,7 +246,4 @@ class BoundedQuasiStaticMagnetoConvection_SingleMode(MagnetoConvection_SingleMod
         # .evaluate() returns a field object
         # ['g'] accesses the grid data
         Nu_p_val = Nu_p.evaluate()['g'].real
-        if self.dist.comm.rank == 0:
-            return {'Nu_p': float(Nu_p_val)}
-        else:
-            return None
+        return {'Nu_p': float(Nu_p_val)}

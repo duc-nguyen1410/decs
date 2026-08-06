@@ -30,18 +30,22 @@ class MagnetoConvection(FluidModel):
         if self.dim == 2:
             Nx, Nz = self.sizes
             Lx, Lz = self.bounds
-            self.coords = de.CartesianCoordinates('x', 'z')
         elif self.dim == 3:
             Nx, Ny, Nz = self.sizes
             Lx, Ly, Lz = self.bounds
-            self.coords = de.CartesianCoordinates('x', 'y', 'z')
         else:
             raise ValueError("Sizes and bounds must be length 2 or 3.")
-        
-        if self.mode=='sim':
-            self.dist = de.Distributor(self.coords, dtype=np.float64)
-        else:
-            self.dist = de.Distributor(self.coords, dtype=np.complex128)
+
+        # Only instantiate CartesianCoordinates and Distributor ONCE
+        # Re-creating Distributor on every parameter evaluation leaks MPI communicators.
+        if self.dist is None:
+            if self.dim == 2:
+                self.coords = de.CartesianCoordinates('x', 'z')
+            else:
+                self.coords = de.CartesianCoordinates('x', 'y', 'z')
+
+            dtype = np.float64 if self.mode == 'sim' else np.complex128
+            self.dist = de.Distributor(self.coords, dtype=dtype)
 
         # Horizontal x-basis (Always periodic)
         if self.mode=='sim':
@@ -267,14 +271,12 @@ class BoundedQuasiStaticMagnetoConvection(MagnetoConvection):
         D_val = D.evaluate()['g'].real
         I_val = I.evaluate()['g'].real
         I_j_val = I_j.evaluate()['g'].real
-        if self.dist.comm.rank == 0:
-            return {'Nu_p': float(Nu_p_val),
-                    'L2_temp': float(L2_temp_val),
-                    'D': float(D_val),
-                    'I': float(I_val),
-                    'I_j': float(I_j_val)}
-        else:
-            return None
+        return {'Nu_p': float(Nu_p_val),
+                'L2_temp': float(L2_temp_val),
+                'D': float(D_val),
+                'I': float(I_val),
+                'I_j': float(I_j_val)}
+
 
     def set_snapshots(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
         snapshots = solver.evaluator.add_file_handler(self.odir+'snapshots', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
