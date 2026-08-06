@@ -529,7 +529,16 @@ class ECSSolver:
             with open(self.odir + 'tol.txt', 'w') as f:
                 f.write(str(norm_b))
 
-        return xi, success, norm_b, np.linalg.norm(xi[:N_]), self.model.get_flow_properties()
+        x0_curr, Tp_curr, ax_curr, ay_curr, az_curr = self.unpack_xi(xi)
+        self.model.set_state(x0_curr)
+        flow_properties = self.model.get_flow_properties()
+        sol_properties = {}
+        if self.Tsearch: sol_properties.update({'Tp': Tp_curr})
+        if self.Rxsearch: sol_properties.update({'ax': ax_curr})
+        if self.Rysearch: sol_properties.update({'ay': ay_curr})
+        if self.Rzsearch: sol_properties.update({'az': az_curr})
+        properties = {**sol_properties, **flow_properties}
+        return xi, success, norm_b, np.linalg.norm(x0_curr), properties
     
 
     
