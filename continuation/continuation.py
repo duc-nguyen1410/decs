@@ -180,7 +180,10 @@ class Continuation:
             if i == 0:
                 self.s_history.append(0.0)
             else:
-                ds_init = np.sqrt(np.linalg.norm(self.x_history[-1] - self.x_history[-2])**2 + 
+                x_norm = np.linalg.norm(self.x_history[-1])
+                if x_norm < 1e-12:
+                    x_norm = 1.0  # Avoid division by zero
+                ds_init = np.sqrt((np.linalg.norm(self.x_history[-1] - self.x_history[-2])/x_norm)**2 + 
                                  ((self.mu_history[-1] - self.mu_history[-2])/munorm)**2)
                 self.s_history.append(self.s_history[-1] + ds_init)
             
