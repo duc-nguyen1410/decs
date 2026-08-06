@@ -531,7 +531,7 @@ class ECSSolver:
 
         x0_curr, Tp_curr, ax_curr, ay_curr, az_curr = self.unpack_xi(xi)
         self.model.set_state(x0_curr)
-        flow_properties = self.model.get_flow_properties()
+        flow_properties = self.model.get_flow_properties() or {}
         sol_properties = {}
         if self.Tsearch: sol_properties.update({'Tp': Tp_curr})
         if self.Rxsearch: sol_properties.update({'ax': ax_curr})

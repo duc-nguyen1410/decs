@@ -291,24 +291,15 @@ class SaltFinger(DoubleDiffusion):
         I_val = I.evaluate()['g'].real
         I_t_val = I_t.evaluate()['g'].real
         I_s_val = I_s.evaluate()['g'].real
-        if self.dist.comm.rank == 0:
-            return {'Nu': float(Nu_val),
-                    'Sh': float(Sh_val),
-                    'D': float(D_val),
-                    'I': float(I_val),
-                    'I_t': float(I_t_val),
-                    'I_s': float(I_s_val)
-                    }
-        else:
-            return None
+        return {'Nu': float(Nu_val),
+                'Sh': float(Sh_val),
+                'D': float(D_val),
+                'I': float(I_val),
+                'I_t': float(I_t_val),
+                'I_s': float(I_s_val)
+                }
 
-    # def set_CFL(self, solver, initial_dt=0.001, cadence=10, safety=0.5, threshold=0.1,  max_change=1.5, min_change=0.5, max_dt=0.1):
-    #     """ Set up the CFL condition for adaptive time-stepping. """
-    #     self.use_CFL = True
-    #     self.CFL = de.CFL(solver, initial_dt=initial_dt, cadence=cadence, safety=safety, threshold=threshold, 
-    #                         max_change=max_change, min_change=min_change, max_dt=max_dt)
-    #     self.CFL.add_velocity(self.fields[0]) # Assuming the first field is velocity; adjust if needed
-    
+
     def set_snapshots(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
         snapshots = solver.evaluator.add_file_handler(self.odir+'snapshots', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
         snapshots.add_task(self.te, name='te')
@@ -466,17 +457,15 @@ class BoundedSaltFinger(DoubleDiffusion):
         I_val = I.evaluate()['g'].real
         I_t_val = I_t.evaluate()['g'].real
         I_s_val = I_s.evaluate()['g'].real
-        if self.dist.comm.rank == 0:
-            return {'Jt': float(Jt_val),
-                    'Js': float(Js_val),
-                    'Nu': float(Nu_val),
-                    'Sh': float(Sh_val),
-                    'D': float(D_val),
-                    'I': float(I_val),
-                    'I_t': float(I_t_val),
-                    'I_s': float(I_s_val)}
-        else:
-            return None
+        return {'Jt': float(Jt_val),
+                'Js': float(Js_val),
+                'Nu': float(Nu_val),
+                'Sh': float(Sh_val),
+                'D': float(D_val),
+                'I': float(I_val),
+                'I_t': float(I_t_val),
+                'I_s': float(I_s_val)}
+        
     def set_snapshots(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
         snapshots = solver.evaluator.add_file_handler(self.odir+'snapshots', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
         snapshots.add_task(self.te, name='te')
@@ -713,16 +702,14 @@ class ShearedDiffusiveConvection(DoubleDiffusion):
         I_t_val = I_t.evaluate()['g'].real
         I_s_val = I_s.evaluate()['g'].real
         I_shear_val = I_shear.evaluate()['g'].real
-        if self.dist.comm.rank == 0:
-            return {'Nu': float(Nu_val),
-                    'Sh': float(Sh_val),
-                    'D': float(D_val),
-                    'I_shear': float(I_shear_val),
-                    'I': float(I_val),
-                    'I_t': float(I_t_val),
-                    'I_s': float(I_s_val)}
-        else:
-            return None
+        return {'Nu': float(Nu_val),
+                'Sh': float(Sh_val),
+                'D': float(D_val),
+                'I_shear': float(I_shear_val),
+                'I': float(I_val),
+                'I_t': float(I_t_val),
+                'I_s': float(I_s_val)}
+        
     def set_snapshots(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
         snapshots = solver.evaluator.add_file_handler(self.odir+'snapshots', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
         snapshots.add_task(self.u, name='u')
@@ -879,16 +866,14 @@ class ShearedDiffusiveConvection_Radko2016(DoubleDiffusion):
         I_t_val = I_t.evaluate()['g'].real
         I_s_val = I_s.evaluate()['g'].real
         I_shear_val = I_shear.evaluate()['g'].real
-        if self.dist.comm.rank == 0:
-            return {'Nu': float(Nu_val),
-                    'Sh': float(Sh_val),
-                    'D': float(D_val),
-                    'I_shear': float(I_shear_val),
-                    'I': float(I_val),
-                    'I_t': float(I_t_val),
-                    'I_s': float(I_s_val)}
-        else:
-            return None
+        return {'Nu': float(Nu_val),
+                'Sh': float(Sh_val),
+                'D': float(D_val),
+                'I_shear': float(I_shear_val),
+                'I': float(I_val),
+                'I_t': float(I_t_val),
+                'I_s': float(I_s_val)}
+
     def set_snapshots(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
         snapshots = solver.evaluator.add_file_handler(self.odir+'snapshots', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
         snapshots.add_task(self.u, name='u')
@@ -1069,18 +1054,15 @@ class WallShearedDiffusiveConvection(DoubleDiffusion):
         I_t_val = I_t.evaluate()['g'].real
         I_s_val = I_s.evaluate()['g'].real
         I_w_val = I_w.evaluate()['g'].real
-        if self.dist.comm.rank == 0:
-            return {'Jt': float(Jt_val),
-                    'Js': float(Js_val),
-                    'Nu': float(Nu_val),
-                    'Sh': float(Sh_val),
-                    'D': float(D_val),
-                    'I_w': float(I_w_val),
-                    'I': float(I_val),
-                    'I_t': float(I_t_val),
-                    'I_s': float(I_s_val)}
-        else:
-            return None
+        return {'Jt': float(Jt_val),
+                'Js': float(Js_val),
+                'Nu': float(Nu_val),
+                'Sh': float(Sh_val),
+                'D': float(D_val),
+                'I_w': float(I_w_val),
+                'I': float(I_val),
+                'I_t': float(I_t_val),
+                'I_s': float(I_s_val)}
         
     def set_snapshots(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
         snapshots = solver.evaluator.add_file_handler(self.odir+'snapshots', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
