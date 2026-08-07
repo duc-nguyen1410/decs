@@ -1,3 +1,5 @@
+from math import dist
+
 import numpy as np
 import scipy.io
 import os
@@ -153,8 +155,9 @@ class Continuation:
                 raise RuntimeError(f"Failed to initialize continuation at mu={current_mu}")
             logger.info(f"Search {self.isearch-1}: Success | {self.mu_name} = {current_mu:.6f} | Res = {res:.2e}")
 
+            x0_curr, Tp_curr, ax_curr, ay_curr, az_curr = self.ECSSolver.unpack_xi(sol)
             # Extract only the state vector x (first N_ entries)
-            x_sol = sol[:N_].copy()
+            x_sol = x0_curr.copy()
 
             # save current mu
             self.save_mu(current_mu)
@@ -165,33 +168,42 @@ class Continuation:
             self.norm_history.append(norm)
 
             if self.Tsearch:
-                self.Tp = sol[N_+self.Tsearch-1]
+                self.Tp = Tp_curr
                 self.Tp_history.append(self.Tp)
             if self.Rxsearch:
-                self.ax = sol[N_+self.Tsearch+self.Rxsearch-1]
+                self.ax = ax_curr
                 self.ax_history.append(self.ax)
             if self.Rysearch:
-                self.ay = sol[N_+self.Tsearch+self.Rxsearch+self.Rysearch-1]
+                self.ay = ay_curr
                 self.ay_history.append(self.ay)
             if self.Rzsearch:
-                self.az = sol[N_+self.Tsearch+self.Rxsearch+self.Rysearch+self.Rzsearch-1]
+                self.az = az_curr
                 self.az_history.append(self.az)
 
-            if i == 0:
-                self.s_history.append(0.0)
-            else:
-                x_norm = np.linalg.norm(self.x_history[-1])
-                if x_norm < 1e-12:
-                    x_norm = 1.0  # Avoid division by zero
-                ds_init = np.sqrt((np.linalg.norm(self.x_history[-1] - self.x_history[-2])/x_norm)**2 + 
-                                 ((self.mu_history[-1] - self.mu_history[-2])/munorm)**2)
-                self.s_history.append(self.s_history[-1] + ds_init)
+            # if i == 0:
+            #     self.s_history.append(0.0)
+            # else:
+            #     x_norm = np.linalg.norm(self.x_history[-1])
+            #     if x_norm < 1e-12:
+            #         x_norm = 1.0  # Avoid division by zero
+            #     ds_init = np.sqrt((np.linalg.norm(self.x_history[-1] - self.x_history[-2])/x_norm)**2 + 
+            #                      ((self.mu_history[-1] - self.mu_history[-2])/munorm)**2)
+            #     self.s_history.append(self.s_history[-1] + ds_init)
             
             current_mu += dmu
             current_x = x_sol # update state vector x
 
         # Main Predictor-Corrector Loop
-        ds = self.s_history[-1] - self.s_history[-2]
+        s0 = 0.0
+        x_norm = np.linalg.norm(self.x_history[-2])
+        s_backward = np.sqrt((np.linalg.norm(self.x_history[-2] - self.x_history[-3])/x_norm)**2 + 
+                                         ((self.mu_history[-2] - self.mu_history[-3])/munorm)**2)
+        self.s_history.append(s0-s_backward)
+        self.s_history.append(s0)
+        s_forward = np.sqrt((np.linalg.norm(self.x_history[-1] - self.x_history[-2])/x_norm)**2 + 
+                                                 ((self.mu_history[-1] - self.mu_history[-2])/munorm)**2)
+        self.s_history.append(s0+s_forward)
+        ds = s_forward
         step = 0
         while step < (n_steps - 3):
             # Check if we've reached the target mu
