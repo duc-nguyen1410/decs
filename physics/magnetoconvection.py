@@ -271,11 +271,14 @@ class BoundedQuasiStaticMagnetoConvection(MagnetoConvection):
         D_val = D.evaluate()['g'].real
         I_val = I.evaluate()['g'].real
         I_j_val = I_j.evaluate()['g'].real
-        return {'Nu_p': float(Nu_p_val),
-                'L2_temp': float(L2_temp_val),
-                'D': float(D_val),
-                'I': float(I_val),
-                'I_j': float(I_j_val)}
+        if self.dist.comm.rank == 0:
+            return {'Nu_p': float(Nu_p_val),
+                    'L2_temp': float(L2_temp_val),
+                    'D': float(D_val),
+                    'I': float(I_val),
+                    'I_j': float(I_j_val)}
+        else:
+            return {}
 
 
     def set_snapshots(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
