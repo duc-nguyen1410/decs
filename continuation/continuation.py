@@ -204,6 +204,12 @@ class Continuation:
                                                  ((self.mu_history[-1] - self.mu_history[-2])/munorm)**2)
         self.s_history.append(s0+s_forward)
         ds = s_forward
+        logger.info(f"s[0] == {self.s_history[0]}")
+        logger.info(f"s[1] == {self.s_history[1]}")
+        logger.info(f"s[2] == {self.s_history[2]}")
+        logger.info(f"dsmin == {self.ds_min}")
+        logger.info(f"ds    == {ds}")
+        logger.info(f"dsmax == {self.ds_max}")
         step = 0
         while step < (n_steps - 3):
             # Check if we've reached the target mu
