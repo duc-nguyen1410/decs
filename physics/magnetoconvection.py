@@ -272,11 +272,11 @@ class BoundedQuasiStaticMagnetoConvection(MagnetoConvection):
         I_val = I.evaluate()['g'].real
         I_j_val = I_j.evaluate()['g'].real
         if self.dist.comm.rank == 0:
-            return {'Nu_p': float(Nu_p_val),
-                    'L2_temp': float(L2_temp_val),
-                    'D': float(D_val),
-                    'I': float(I_val),
-                    'I_j': float(I_j_val)}
+            return {'Nu_p': float(Nu_p_val.item()),
+                    'L2_temp': float(L2_temp_val.item()),
+                    'D': float(D_val.item()),
+                    'I': float(I_val.item()),
+                    'I_j': float(I_j_val.item())}
         else:
             return {}
 

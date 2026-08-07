@@ -292,12 +292,12 @@ class SaltFinger(DoubleDiffusion):
         I_t_val = I_t.evaluate()['g'].real
         I_s_val = I_s.evaluate()['g'].real
         if self.dist.comm.rank == 0:
-            return {'Nu': float(Nu_val),
-                    'Sh': float(Sh_val),
-                    'D': float(D_val),
-                    'I': float(I_val),
-                    'I_t': float(I_t_val),
-                    'I_s': float(I_s_val)
+            return {'Nu': float(Nu_val.item()),
+                    'Sh': float(Sh_val.item()),
+                    'D': float(D_val.item()),
+                    'I': float(I_val.item()),
+                    'I_t': float(I_t_val.item()),
+                    'I_s': float(I_s_val.item()),
                     }
         else:
             return {}
@@ -460,14 +460,14 @@ class BoundedSaltFinger(DoubleDiffusion):
         I_t_val = I_t.evaluate()['g'].real
         I_s_val = I_s.evaluate()['g'].real
         if self.dist.comm.rank == 0:
-            return {'Jt': float(Jt_val),
-                    'Js': float(Js_val),
-                    'Nu': float(Nu_val),
-                    'Sh': float(Sh_val),
-                    'D': float(D_val),
-                    'I': float(I_val),
-                    'I_t': float(I_t_val),
-                    'I_s': float(I_s_val)}
+            return {'Jt': float(Jt_val.item()),
+                    'Js': float(Js_val.item()),
+                    'Nu': float(Nu_val.item()),
+                    'Sh': float(Sh_val.item()),
+                    'D': float(D_val.item()),
+                    'I': float(I_val.item()),
+                    'I_t': float(I_t_val.item()),
+                    'I_s': float(I_s_val.item())}
         else:
             return {}
         
@@ -708,13 +708,13 @@ class ShearedDiffusiveConvection(DoubleDiffusion):
         I_s_val = I_s.evaluate()['g'].real
         I_shear_val = I_shear.evaluate()['g'].real
         if self.dist.comm.rank == 0:
-            return {'Nu': float(Nu_val),
-                    'Sh': float(Sh_val),
-                    'D': float(D_val),
-                    'I_shear': float(I_shear_val),
-                    'I': float(I_val),
-                    'I_t': float(I_t_val),
-                    'I_s': float(I_s_val)}
+            return {'Nu': float(Nu_val.item()),
+                    'Sh': float(Sh_val.item()),
+                    'D': float(D_val.item()),
+                    'I_shear': float(I_shear_val.item()),
+                    'I': float(I_val.item()),
+                    'I_t': float(I_t_val.item()),
+                    'I_s': float(I_s_val.item())}
         else:
             return {}
         
@@ -875,13 +875,13 @@ class ShearedDiffusiveConvection_Radko2016(DoubleDiffusion):
         I_s_val = I_s.evaluate()['g'].real
         I_shear_val = I_shear.evaluate()['g'].real
         if self.dist.comm.rank == 0:
-            return {'Nu': float(Nu_val),
-                    'Sh': float(Sh_val),
-                    'D': float(D_val),
-                    'I_shear': float(I_shear_val),
-                    'I': float(I_val),
-                    'I_t': float(I_t_val),
-                    'I_s': float(I_s_val)}
+            return {'Nu': float(Nu_val.item()),
+                    'Sh': float(Sh_val.item()),
+                    'D': float(D_val.item()),
+                    'I_shear': float(I_shear_val.item()),
+                    'I': float(I_val.item()),
+                    'I_t': float(I_t_val.item()),
+                    'I_s': float(I_s_val.item())}
         else:
             return {}
 
@@ -1066,15 +1066,15 @@ class WallShearedDiffusiveConvection(DoubleDiffusion):
         I_s_val = I_s.evaluate()['g'].real
         I_w_val = I_w.evaluate()['g'].real
         if self.dist.comm.rank == 0:
-            return {'Jt': float(Jt_val),
-                    'Js': float(Js_val),
-                    'Nu': float(Nu_val),
-                    'Sh': float(Sh_val),
-                    'D': float(D_val),
-                    'I_w': float(I_w_val),
-                    'I': float(I_val),
-                    'I_t': float(I_t_val),
-                    'I_s': float(I_s_val)}
+            return {'Jt': float(Jt_val.item()),
+                    'Js': float(Js_val.item()),
+                    'Nu': float(Nu_val.item()),
+                    'Sh': float(Sh_val.item()),
+                    'D': float(D_val.item()),
+                    'I_w': float(I_w_val.item()),
+                    'I': float(I_val.item()),
+                    'I_t': float(I_t_val.item()),
+                    'I_s': float(I_s_val.item())}
         else:
             return {}
         

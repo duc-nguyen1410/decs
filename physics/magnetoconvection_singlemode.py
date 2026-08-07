@@ -247,6 +247,6 @@ class BoundedQuasiStaticMagnetoConvection_SingleMode(MagnetoConvection_SingleMod
         # ['g'] accesses the grid data
         Nu_p_val = Nu_p.evaluate()['g'].real
         if self.dist.comm.rank == 0:
-            return {'Nu_p': float(Nu_p_val)}
+            return {'Nu_p': float(Nu_p_val.item())}
         else:
             return {}   
