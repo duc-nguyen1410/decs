@@ -136,6 +136,8 @@ class Continuation:
         self.ECSSolver.Rxsearch = self.Rxsearch
         self.ECSSolver.Rysearch = self.Rysearch
         self.ECSSolver.Rzsearch = self.Rzsearch
+
+        mu_scale_min = abs(self.mu_ref) if abs(self.mu_ref) > 1e-12 else 1.0
         munorm = abs(self.mu_ref) if abs(self.mu_ref) > 1e-12 else abs(mu_start)
         if munorm < 1e-12:
             munorm = 1.0  # Avoid division by zero
@@ -143,6 +145,13 @@ class Continuation:
         logger.info(f"Starting {self.continuation_type.capitalize()} Continuation on {self.mu_name}...")
         if self.ECSSolver.model.dist.comm.rank == 0:
             os.makedirs(self.odir, exist_ok=True)
+
+        # Helper function for consistent arclength step computation
+        def compute_step_norm(x_curr, x_prev, mu_curr, mu_prev):
+            x_norm_val = max(np.linalg.norm(x_prev), 1e-12)
+            mu_norm_val = max(abs(mu_curr), mu_scale_min)
+            return np.sqrt((np.linalg.norm(x_curr - x_prev) / x_norm_val)**2 + 
+                        ((mu_curr - mu_prev) / mu_norm_val)**2)
 
         # Initialize: Need 3 points to start the quadratic predictor
         current_mu = mu_start
@@ -153,81 +162,61 @@ class Continuation:
             sol, success, res, norm, properties = self.step_continuation(current_x, current_mu)
             if not success:
                 raise RuntimeError(f"Failed to initialize continuation at mu={current_mu}")
+            
             logger.info(f"Search {self.isearch-1}: Success | {self.mu_name} = {current_mu:.6f} | Res = {res:.2e}")
 
             x0_curr, Tp_curr, ax_curr, ay_curr, az_curr = self.ECSSolver.unpack_xi(sol)
-            # Extract only the state vector x (first N_ entries)
-            x_sol = x0_curr.copy()
-
-            # save current mu
+            
             self.save_mu(current_mu)
             self.save_flow_properties(current_mu, properties)
 
             self.mu_history.append(current_mu)
-            self.x_history.append(x_sol)
+            self.x_history.append(x0_curr)
             self.norm_history.append(norm)
 
-            if self.Tsearch:
-                self.Tp = Tp_curr
-                self.Tp_history.append(self.Tp)
-            if self.Rxsearch:
-                self.ax = ax_curr
-                self.ax_history.append(self.ax)
-            if self.Rysearch:
-                self.ay = ay_curr
-                self.ay_history.append(self.ay)
-            if self.Rzsearch:
-                self.az = az_curr
-                self.az_history.append(self.az)
-
-            # if i == 0:
-            #     self.s_history.append(0.0)
-            # else:
-            #     x_norm = np.linalg.norm(self.x_history[-1])
-            #     if x_norm < 1e-12:
-            #         x_norm = 1.0  # Avoid division by zero
-            #     ds_init = np.sqrt((np.linalg.norm(self.x_history[-1] - self.x_history[-2])/x_norm)**2 + 
-            #                      ((self.mu_history[-1] - self.mu_history[-2])/munorm)**2)
-            #     self.s_history.append(self.s_history[-1] + ds_init)
+            if self.Tsearch:  self.Tp = Tp_curr;  self.Tp_history.append(self.Tp)
+            if self.Rxsearch: self.ax = ax_curr;  self.ax_history.append(self.ax)
+            if self.Rysearch: self.ay = ay_curr;  self.ay_history.append(self.ay)
+            if self.Rzsearch: self.az = az_curr;  self.az_history.append(self.az)
             
             current_mu += dmu
-            current_x = x_sol # update state vector x
+            current_x = x0_curr # update state vector x
 
-        # Main Predictor-Corrector Loop
+        # Initialize Arclength History (s_history) with consistent metric
         s0 = 0.0
-        x_norm = np.linalg.norm(self.x_history[-2])
-        s_backward = np.sqrt((np.linalg.norm(self.x_history[-2] - self.x_history[-3])/x_norm)**2 + 
-                                         ((self.mu_history[-2] - self.mu_history[-3])/munorm)**2)
+        s_backward = compute_step_norm(self.x_history[-2], self.x_history[-3], self.mu_history[-2], self.mu_history[-3])
+        s_forward  = compute_step_norm(self.x_history[-1], self.x_history[-2], self.mu_history[-1], self.mu_history[-2])
+
         self.s_history.append(s0-s_backward)
         self.s_history.append(s0)
-        s_forward = np.sqrt((np.linalg.norm(self.x_history[-1] - self.x_history[-2])/x_norm)**2 + 
-                                                 ((self.mu_history[-1] - self.mu_history[-2])/munorm)**2)
         self.s_history.append(s0+s_forward)
         ds = s_forward
+
+        logger.info("Initial s")
         logger.info(f"s[0] == {self.s_history[0]}")
         logger.info(f"s[1] == {self.s_history[1]}")
         logger.info(f"s[2] == {self.s_history[2]}")
         logger.info(f"dsmin == {self.ds_min}")
         logger.info(f"ds    == {ds}")
         logger.info(f"dsmax == {self.ds_max}")
+
+        # Main Predictor-Corrector Loop
         step = 0
         while step < (n_steps - 3):
             # Check if we've reached the target mu
             if mu_target is not None:
-                if (self.mu_history[-1] - mu_target) * (self.mu_history[-2] - mu_target) < 0:
-                    logger.info("Reached target mu.")
+                if (self.mu_history[-1] - mu_target) * (self.mu_history[-2] - mu_target) <= 0:
+                    logger.info("Reached or crossed target mu.")
                     break
 
             success = False
-            # Inner adjustment loop: Find a decent initial guess
+            # Predictor / Inner Adjustment Loop
             for iadjust in range(self.Ndsadjust):
-                # Predict next point
                 if self.continuation_type == "natural":
                     # ==========================================
                     # Natural Parameter Continuation Predictor
                     # ==========================================
                     dmu_step = ds  # Reusing ds variable as the step size for mu, or use a dedicated dmu
-
                     mu_pred = self.mu_history[-1] + dmu_step
 
                     # Linear extrapolation of x with respect to mu
@@ -238,30 +227,10 @@ class Continuation:
                     dx_dmu = (self.x_history[-1] - self.x_history[-2]) / dmu_prev
                     x_pred = self.x_history[-1] + dx_dmu * dmu_step
 
-                    # Optional variables extrapolation w.r.t mu
-                    if self.Tsearch:
-                        dTp_dmu = (self.Tp_history[-1] - self.Tp_history[-2]) / dmu_prev
-                        Tp_pred = self.Tp_history[-1] + dTp_dmu * dmu_step
-                    else:
-                        Tp_pred = None
-
-                    if self.Rxsearch:
-                        dax_dmu = (self.ax_history[-1] - self.ax_history[-2]) / dmu_prev
-                        ax_pred = self.ax_history[-1] + dax_dmu * dmu_step
-                    else:
-                        ax_pred = None
-
-                    if self.Rysearch:
-                        day_dmu = (self.ay_history[-1] - self.ay_history[-2]) / dmu_prev
-                        ay_pred = self.ay_history[-1] + day_dmu * dmu_step
-                    else:
-                        ay_pred = None
-
-                    if self.Rzsearch:
-                        daz_dmu = (self.az_history[-1] - self.az_history[-2]) / dmu_prev
-                        az_pred = self.az_history[-1] + daz_dmu * dmu_step
-                    else:
-                        az_pred = None
+                    Tp_pred = self.Tp_history[-1] + ((self.Tp_history[-1] - self.Tp_history[-2]) / dmu_prev) * dmu_step if self.Tsearch else None
+                    ax_pred = self.ax_history[-1] + ((self.ax_history[-1] - self.ax_history[-2]) / dmu_prev) * dmu_step if self.Rxsearch else None
+                    ay_pred = self.ay_history[-1] + ((self.ay_history[-1] - self.ay_history[-2]) / dmu_prev) * dmu_step if self.Rysearch else None
+                    az_pred = self.az_history[-1] + ((self.az_history[-1] - self.az_history[-2]) / dmu_prev) * dmu_step if self.Rzsearch else None
 
                 else:
                     # ==========================================
@@ -270,25 +239,45 @@ class Continuation:
                     if self.predictor == 'quadratic':
                         # Predictor using quadratic interpolation in arclength space
                         s_next = self.s_history[-1] + ds
-                        mu_pred = quadraticInterpolate(self.mu_history[-3:], self.s_history[-3:], s_next)
-                        x_pred = quadraticInterpolate(self.x_history[-3:], self.s_history[-3:], s_next)
-                        Tp_pred = quadraticInterpolate(self.Tp_history[-3:], self.s_history[-3:], s_next) if self.Tsearch else None
-                        ax_pred = quadraticInterpolate(self.ax_history[-3:], self.s_history[-3:], s_next) if self.Rxsearch else None
-                        ay_pred = quadraticInterpolate(self.ay_history[-3:], self.s_history[-3:], s_next) if self.Rysearch else None
-                        az_pred = quadraticInterpolate(self.az_history[-3:], self.s_history[-3:], s_next) if self.Rzsearch else None
+                        s_pts = self.s_history[-3:]
+                        # Format: quadraticInterpolate(x list, s list, s next)
+                        mu_pred = quadraticInterpolate(self.mu_history[-3:], s_pts, s_next)
+                        x_pred = quadraticInterpolate(self.x_history[-3:], s_pts, s_next)
+                        Tp_pred = quadraticInterpolate(self.Tp_history[-3:], s_pts, s_next) if self.Tsearch else None
+                        ax_pred = quadraticInterpolate(self.ax_history[-3:], s_pts, s_next) if self.Rxsearch else None
+                        ay_pred = quadraticInterpolate(self.ay_history[-3:], s_pts, s_next) if self.Rysearch else None
+                        az_pred = quadraticInterpolate(self.az_history[-3:], s_pts, s_next) if self.Rzsearch else None
                     else:
-                        # Predictor using tangent control
+                        # Predictor using tangent vector control
                         dx = self.x_history[-1] - self.x_history[-2]
                         dmu_val = self.mu_history[-1] - self.mu_history[-2]
-                        tangent_norm = np.sqrt(np.linalg.norm(dx)**2 + (dmu_val/munorm)**2)
+
+                        dTp = (self.Tp_history[-1] - self.Tp_history[-2]) if self.Tsearch else 0.0
+                        dax = (self.ax_history[-1] - self.ax_history[-2]) if self.Rxsearch else 0.0
+                        day = (self.ay_history[-1] - self.ay_history[-2]) if self.Rysearch else 0.0
+                        daz = (self.az_history[-1] - self.az_history[-2]) if self.Rzsearch else 0.0
+
+                        # Safe normalization factors
+                        x_norm = max(np.linalg.norm(self.x_history[-2]), 1e-12)
+                        mu_norm_val = max(abs(self.mu_history[-1]), mu_scale_min)
+
+                        # Scaled tangent norm including active optional parameters
+                        scaled_sq_sum = (np.linalg.norm(dx) / x_norm)**2 + (dmu_val / mu_norm_val)**2
+                        if self.Tsearch:  scaled_sq_sum += (dTp / max(abs(self.Tp_history[-2]), 1e-12))**2
+                        if self.Rxsearch: scaled_sq_sum += (dax / max(abs(self.ax_history[-2]), 1e-12))**2
+                        if self.Rysearch: scaled_sq_sum += (day / max(abs(self.ay_history[-2]), 1e-12))**2
+                        if self.Rzsearch: scaled_sq_sum += (daz / max(abs(self.az_history[-2]), 1e-12))**2
+
+                        tangent_norm = np.sqrt(scaled_sq_sum)
                         if tangent_norm < 1e-14:
                             raise RuntimeError("Tangent vector collapsed.")
+                        
                         x_pred = self.x_history[-1] + ds * (dx / tangent_norm)
                         mu_pred = self.mu_history[-1] + ds * (dmu_val / tangent_norm)
-                        Tp_pred = self.Tp_history[-1] + ds * (self.Tp_history[-1] - self.Tp_history[-2]) / tangent_norm if self.Tsearch else None
-                        ax_pred = self.ax_history[-1] + ds * (self.ax_history[-1] - self.ax_history[-2]) / tangent_norm if self.Rxsearch else None
-                        ay_pred = self.ay_history[-1] + ds * (self.ay_history[-1] - self.ay_history[-2]) / tangent_norm if self.Rysearch else None
-                        az_pred = self.az_history[-1] + ds * (self.az_history[-1] - self.az_history[-2]) / tangent_norm if self.Rzsearch else None
+                        Tp_pred = self.Tp_history[-1] + ds * (dTp / tangent_norm) if self.Tsearch else None
+                        ax_pred = self.ax_history[-1] + ds * (dax / tangent_norm) if self.Rxsearch else None
+                        ay_pred = self.ay_history[-1] + ds * (day / tangent_norm) if self.Rysearch else None
+                        az_pred = self.az_history[-1] + ds * (daz / tangent_norm) if self.Rzsearch else None
 
                 # Assign predicted aux values temporarily
                 if self.Tsearch: self.Tp = Tp_pred
@@ -300,14 +289,10 @@ class Continuation:
                 logger.info(f"dsmin == {self.ds_min}")
                 logger.info(f"ds    == {ds}")
                 logger.info(f"dsmax == {self.ds_max}")
-                if self.Tsearch:
-                    logger.info(f"Predicted Tp = {self.Tp:.6f}")
-                if self.Rxsearch:
-                    logger.info(f"Predicted ax = {self.ax:.6f}")
-                if self.Rysearch:
-                    logger.info(f"Predicted ay = {self.ay:.6f}")
-                if self.Rzsearch:                
-                    logger.info(f"Predicted az = {self.az:.6f}")
+                if self.Tsearch: logger.info(f"Predicted Tp = {self.Tp:.6f}")
+                if self.Rxsearch: logger.info(f"Predicted ax = {self.ax:.6f}")
+                if self.Rysearch: logger.info(f"Predicted ay = {self.ay:.6f}")
+                if self.Rzsearch: logger.info(f"Predicted az = {self.az:.6f}")
                 logger.info(f"Predicted {self.mu_name} = {mu_pred:.6f}")
                 logger.info(f"guesserrmin == {self.guess_error_min}")
                 logger.info(f"guesserr    == {guess_err}")
@@ -320,39 +305,31 @@ class Continuation:
                     # Guess error is too high (Newton will likely fail)
                     # Shrink ds and re-predict within this adjustment loop
                     ds_new = max(ds * (self.guesserrtarget / guess_err)**(1/3), self.ds_min)
-                    if ds_new == ds: # Hit ds_min limit
+                    if np.isclose(ds_new, ds): # Hit ds_min limit
                         break # Reached ds_min limit, attempt solve anyway
                     ds = ds_new
 
-            # Correct (Direct Newton Call)
+            # Corrector (Direct Newton Call)
             sol, success, res, norm, properties = self.step_continuation(x_pred, mu_pred)
             
             if success:
-                x_sol = sol[:N_].copy()
+                x0_curr, Tp_curr, ax_curr, ay_curr, az_curr = self.ECSSolver.unpack_xi(sol)
                 # save current mu
                 self.save_mu(mu_pred)
                 self.save_flow_properties(mu_pred, properties)
 
                 self.mu_history.append(mu_pred)
-                self.x_history.append(x_sol)
+                self.x_history.append(x0_curr)
                 self.norm_history.append(norm)
 
-                if self.Tsearch:
-                    self.Tp = sol[N_+self.Tsearch-1]
-                    self.Tp_history.append(self.Tp)
-                if self.Rxsearch:
-                    self.ax = sol[N_+self.Tsearch+self.Rxsearch-1]
-                    self.ax_history.append(self.ax)
-                if self.Rysearch:
-                    self.ay = sol[N_+self.Tsearch+self.Rxsearch+self.Rysearch-1]
-                    self.ay_history.append(self.ay)
-                if self.Rzsearch:
-                    self.az = sol[N_+self.Tsearch+self.Rxsearch+self.Rysearch+self.Rzsearch-1]
-                    self.az_history.append(self.az)
+                if self.Tsearch:  self.Tp = Tp_curr;  self.Tp_history.append(self.Tp)
+                if self.Rxsearch: self.ax = ax_curr;  self.ax_history.append(self.ax)
+                if self.Rysearch: self.ay = ay_curr;  self.ay_history.append(self.ay)
+                if self.Rzsearch: self.az = az_curr;  self.az_history.append(self.az)
                 
                 # Calculate actual arclength step taken
-                ds_actual = np.sqrt(np.linalg.norm(self.x_history[-1] - self.x_history[-2])**2 + 
-                                   ((self.mu_history[-1] - self.mu_history[-2])/munorm)**2)
+                ds_actual = compute_step_norm(self.x_history[-1], self.x_history[-2], 
+                                          self.mu_history[-1], self.mu_history[-2])
                 self.s_history.append(self.s_history[-1] + ds_actual)
                 
                 logger.info(f"Search {self.isearch-1}: Success | {self.mu_name} = {mu_pred:.6f} | Res = {res:.2e}")
