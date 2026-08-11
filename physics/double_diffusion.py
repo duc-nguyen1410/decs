@@ -1,5 +1,6 @@
 import dedalus.public as de
 import numpy as np
+from mpi4py import MPI
 import h5py
 import matplotlib.pyplot as plt
 from .base import FluidModel 
@@ -29,7 +30,7 @@ class DoubleDiffusion(FluidModel):
             Lx, Ly, Lz = self.bounds
         else:
             raise ValueError("Sizes and bounds must be length 2 or 3.")
-
+        MPI.COMM_WORLD.Barrier()
         # Only instantiate CartesianCoordinates and Distributor ONCE
         # Re-creating Distributor on every parameter evaluation leaks MPI communicators.
         if self.dist is None:
@@ -37,11 +38,11 @@ class DoubleDiffusion(FluidModel):
                 self.coords = de.CartesianCoordinates('x', 'z')
             else:
                 self.coords = de.CartesianCoordinates('x', 'y', 'z')
-
             dtype = np.float64 if self.mode == 'sim' else np.complex128
             self.dist = de.Distributor(self.coords, dtype=dtype)
 
         # Horizontal x-basis (Always periodic)
+        self.x_basis = None
         if self.mode=='sim':
             x_basis = de.RealFourier(self.coords['x'], size=Nx, bounds=(0, Lx), dealias=self.dealias)
         else:
@@ -49,11 +50,13 @@ class DoubleDiffusion(FluidModel):
         
         # Only if 3D, Always periodic
         if self.dim == 3:
+            self.y_basis = None
             if self.mode=='sim':
                 y_basis = de.RealFourier(self.coords['y'], size=Ny, bounds=(0, Ly), dealias=self.dealias)
             else:
                 y_basis = de.ComplexFourier(self.coords['y'], size=Ny, bounds=(0, Ly), dealias=self.dealias)
 
+        self.z_basis = None
         if self.bounded:
             # Use Chebyshev for bounded domains
             z_basis = de.ChebyshevT(self.coords['z'], size=Nz, bounds=(0, Lz), dealias=self.dealias)
@@ -63,7 +66,8 @@ class DoubleDiffusion(FluidModel):
                 z_basis = de.RealFourier(self.coords['z'], size=Nz, bounds=(0, Lz), dealias=self.dealias)
             else:
                 z_basis = de.ComplexFourier(self.coords['z'], size=Nz, bounds=(0, Lz), dealias=self.dealias)
-        
+
+        self.bases = None
         if self.dim == 2:
             self.bases = (x_basis, z_basis)
         else:
@@ -115,71 +119,6 @@ class DoubleDiffusion(FluidModel):
                 # self.preview_ax.set_title(f"Salt Concentration at time {self.sim_time:.2f}")
                 self.preview_fig.canvas.draw()
                 self.preview_fig.canvas.flush_events()  
-                       
-    # def preview3D(self):
-    #     """ Preview the current state using last field in 3D using isosurfaces. """
-    #     if self.dim == 3:
-    #         from mpl_toolkits.mplot3d import art3d
-    #         # pip install scikit-image
-    #         from skimage import measure # For Marching Cubes (isosurface)
-    
-    #         # Get the last field (usually Salinity or Temperature)
-    #         data_g = self.fields[-1].allgather_data('g').real
-            
-    #         if self.dist.comm.rank == 0:
-    #             # Get 1D axis arrays for the grid
-    #             xg = self.bases[0].global_grid(self.dist, scale=self.dealias).ravel()
-    #             yg = self.bases[1].global_grid(self.dist, scale=self.dealias).ravel()
-    #             zg = self.bases[2].global_grid(self.dist, scale=self.dealias).ravel()
-                
-    #             # 1. Initialize Figure
-    #             if self.preview_fig is None:
-    #                 plt.ion()
-    #                 self.preview_fig = plt.figure(figsize=(6, 5))
-    #                 self.preview_ax = self.preview_fig.add_subplot(111, projection='3d')
-    #                 self.preview_ax.set_xlabel('x')
-    #                 self.preview_ax.set_ylabel('y')
-    #                 self.preview_ax.set_zlabel('z')
-    #             else:
-    #                 self.preview_ax.clear() # Clear the previous frame
-    #                 self.preview_ax.set_xlabel('x')
-    #                 self.preview_ax.set_ylabel('y')
-    #                 self.preview_ax.set_zlabel('z')
-
-    #             # 2. Generate Isosurface using Marching Cubes
-    #             # Choose a level (e.g., the mean of the field)
-    #             level = (np.max(data_g) + np.min(data_g)) / 2
-                
-    #             try:
-    #                 # verts: coordinates of vertices, faces: triangles
-    #                 verts, faces, normals, values = measure.marching_cubes(data_g, level=level)
-                    
-    #                 # Scale vertices from index-space to physical-space
-    #                 # Indices are (i, j, k) corresponding to (x, y, z)
-    #                 verts[:, 0] = verts[:, 0] * (xg[1] - xg[0]) + xg[0]
-    #                 verts[:, 1] = verts[:, 1] * (yg[1] - yg[0]) + yg[0]
-    #                 verts[:, 2] = verts[:, 2] * (zg[1] - zg[0]) + zg[0]
-
-    #                 # 3. Create a 3D PolyCollection (the mesh)
-    #                 mesh = art3d.Poly3DCollection(verts[faces])
-    #                 mesh.set_edgecolor('none')
-    #                 mesh.set_alpha(0.6)
-    #                 mesh.set_facecolor('royalblue')
-                    
-    #                 self.preview_ax.add_collection3d(mesh)
-                    
-    #                 # Set limits based on domain
-    #                 self.preview_ax.set_xlim(xg.min(), xg.max())
-    #                 self.preview_ax.set_ylim(yg.min(), yg.max())
-    #                 self.preview_ax.set_zlim(zg.min(), zg.max())
-                    
-    #             except (ValueError, RuntimeError):
-    #                 # Fallback if the field is uniform or level is outside range
-    #                 self.preview_ax.text(0.5, 0.5, 0.5, "Field uniform - No surface", transform=self.preview_ax.transAxes)
-
-    #             self.preview_fig.canvas.draw()
-    #             self.preview_fig.canvas.flush_events()
-
 
 ########################################################################################
 ########################################################################################

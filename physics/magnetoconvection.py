@@ -1,5 +1,6 @@
 import dedalus.public as de
 import numpy as np
+from mpi4py import MPI
 import h5py
 import matplotlib.pyplot as plt
 from .base import FluidModel 
@@ -35,7 +36,7 @@ class MagnetoConvection(FluidModel):
             Lx, Ly, Lz = self.bounds
         else:
             raise ValueError("Sizes and bounds must be length 2 or 3.")
-
+        MPI.COMM_WORLD.Barrier()
         # Only instantiate CartesianCoordinates and Distributor ONCE
         # Re-creating Distributor on every parameter evaluation leaks MPI communicators.
         if self.dist is None:
@@ -48,6 +49,7 @@ class MagnetoConvection(FluidModel):
             self.dist = de.Distributor(self.coords, dtype=dtype)
 
         # Horizontal x-basis (Always periodic)
+        self.x_basis = None
         if self.mode=='sim':
             x_basis = de.RealFourier(self.coords['x'], size=Nx, bounds=(0, Lx), dealias=self.dealias)
         else:
@@ -55,11 +57,13 @@ class MagnetoConvection(FluidModel):
         
         # Only if 3D, Always periodic
         if self.dim == 3:
+            self.y_basis = None
             if self.mode=='sim':
                 y_basis = de.RealFourier(self.coords['y'], size=Ny, bounds=(0, Ly), dealias=self.dealias)
             else:
                 y_basis = de.ComplexFourier(self.coords['y'], size=Ny, bounds=(0, Ly), dealias=self.dealias)
 
+        self.z_basis = None
         if self.bounded:
             # Use Chebyshev for bounded domains
             z_basis = de.ChebyshevT(self.coords['z'], size=Nz, bounds=(0, Lz), dealias=self.dealias)
@@ -69,7 +73,8 @@ class MagnetoConvection(FluidModel):
                 z_basis = de.RealFourier(self.coords['z'], size=Nz, bounds=(0, Lz), dealias=self.dealias)
             else:
                 z_basis = de.ComplexFourier(self.coords['z'], size=Nz, bounds=(0, Lz), dealias=self.dealias)
-        
+
+        self.bases = None
         if self.dim == 2:
             self.bases = (x_basis, z_basis)
         else:

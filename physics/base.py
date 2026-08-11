@@ -2,6 +2,7 @@ import numpy as np
 import dedalus.public as de
 import h5py
 from mpi4py import MPI
+import gc
 import matplotlib.pyplot as plt
 from .symmetry import Symmetry
 import logging
@@ -98,7 +99,13 @@ class FluidModel:
 
         else:
             raise KeyError(f"Parameter '{name}' is unknown (not in self.params or model attributes).")
-                
+
+        # Clear old problem references
+        self.ivp_problem = None
+        # Force Python to run garbage collection and release MPI communicators
+        gc.collect()
+        MPI.COMM_WORLD.Barrier()
+        # Now rebuild the problem safely
         # Rebuild Dedalus problems with updated values/operators
         self.build_problems()
         logger.info(f"Parameter '{name}' updated to {value}. Dedalus problems rebuilt.")
