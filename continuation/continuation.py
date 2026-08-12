@@ -339,8 +339,8 @@ class Continuation:
                 step += 1  # Advance step counter only on success
             else:
                 logger.info(f"Step {step}: Failed. Reducing step size...")
-                # if np.isclose(ds, self.ds_min):
-                #     raise RuntimeError(f"Continuation stuck: Newton failed at minimum step size ds_min={self.ds_min}")
+                if np.isclose(ds, self.ds_min):
+                    raise RuntimeError(f"Continuation stuck: Newton failed at minimum step size ds_min={self.ds_min}")
                 # Restore attributes to last converged state
                 if self.Tsearch and self.Tp_history: self.Tp = self.Tp_history[-1]
                 if self.Rxsearch and self.ax_history: self.ax = self.ax_history[-1]
