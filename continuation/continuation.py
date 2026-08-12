@@ -184,13 +184,11 @@ class Continuation:
 
         # Initialize Arclength History (s_history) with consistent metric
         s0 = 0.0
-        s_backward = compute_step_norm(self.x_history[-2], self.x_history[-3], self.mu_history[-2], self.mu_history[-3])
-        s_forward  = compute_step_norm(self.x_history[-1], self.x_history[-2], self.mu_history[-1], self.mu_history[-2])
+        s_step1 = compute_step_norm(self.x_history[-2], self.x_history[-3], self.mu_history[-2], self.mu_history[-3])
+        s_step2  = compute_step_norm(self.x_history[-1], self.x_history[-2], self.mu_history[-1], self.mu_history[-2])
 
-        self.s_history.append(s0-s_backward)
-        self.s_history.append(s0)
-        self.s_history.append(s0+s_forward)
-        ds = s_forward
+        self.s_history = [0.0, s_step1, s_step1 + s_step2]
+        ds = s_step2
 
         logger.info("Initial s")
         logger.info(f"s[0] == {self.s_history[0]}")
@@ -216,13 +214,13 @@ class Continuation:
                     # ==========================================
                     # Natural Parameter Continuation Predictor
                     # ==========================================
-                    dmu_step = ds  # Reusing ds variable as the step size for mu, or use a dedicated dmu
-                    mu_pred = self.mu_history[-1] + dmu_step
-
                     # Linear extrapolation of x with respect to mu
                     dmu_prev = self.mu_history[-1] - self.mu_history[-2]
                     if abs(dmu_prev) < 1e-14:
                         raise RuntimeError("Parameter step collapsed in natural continuation.")
+
+                    dmu_step = ds * np.sign(dmu_prev)  # Reusing ds variable as the step size for mu, or use a dedicated dmu
+                    mu_pred = self.mu_history[-1] + dmu_step
 
                     dx_dmu = (self.x_history[-1] - self.x_history[-2]) / dmu_prev
                     x_pred = self.x_history[-1] + dx_dmu * dmu_step
