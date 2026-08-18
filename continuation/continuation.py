@@ -296,13 +296,20 @@ class Continuation:
                 logger.info(f"guesserr    == {guess_err}")
                 logger.info(f"guesserrmax == {self.guess_error_max}")
 
+                if self.Tsearch and (Tp_pred is None or Tp_pred <= 0):
+                    logger.warning(f"Non-positive Tp predicted ({Tp_pred}). Shrinking ds...")
+                    ds = max(ds * 0.5, self.ds_min)
+                    continue  # Retry prediction loop with smaller ds
+
                 # Evaluate initial guess quality
                 if guess_err <= self.guess_error_max:
                     break # Guess is acceptable, proceed to solve
                 else:
                     # Guess error is too high (Newton will likely fail)
                     # Shrink ds and re-predict within this adjustment loop
-                    ds_new = max(ds * (self.guesserrtarget / guess_err)**(1/3), self.ds_min)
+                    ds_suggested = ds * (self.guesserrtarget / guess_err)**(1/3)
+                    # Enforce both upper and lower bounds during step scaling
+                    ds_new = np.clip(ds_suggested, self.ds_min, self.ds_max)
                     if np.isclose(ds_new, ds): # Hit ds_min limit
                         break # Reached ds_min limit, attempt solve anyway
                     ds = ds_new
