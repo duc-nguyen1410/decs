@@ -4,6 +4,22 @@ from mpi4py import MPI
 import h5py
 import matplotlib.pyplot as plt
 from .base import FluidModel 
+# Helper function
+def kc_to_minimize_critical_Ra(Q):
+    # set Rayleigh number = critical Rayleigh number (based on eq 2.7 in paper Yan et al. (2019)
+    # Coefficients of the polynomial (descending order)
+    # 2*k_c^6 + 3*pi^2*k_c^4 + 0*k_c^3 + 0*k_c^2 + 0*k_c + (-pi^6 - Q*pi^4)
+    coeffs = [2, 0, 3 * np.pi**2, 0, 0, 0, -(np.pi**6 + Q * np.pi**4)]
+    # we can get an analytical solution for k_c by solving the polynomial equation 2*k_c^6 + 3*pi^2*k_c^4 - (pi^6 + Q*pi^4) = 0
+    # Find roots
+    roots = np.roots(coeffs)
+    # Filter real roots
+    real_roots = [r.real for r in roots if np.isreal(r) and r.real > 0]
+    return real_roots
+def critical_Ra(Q_val):
+    k_c = kc_to_minimize_critical_Ra(Q_val)[0]  # Take the first real root
+    Ra_c = (np.pi**2 + k_c**2)**3 / k_c**2 + Q_val * (np.pi**2 + k_c**2) / k_c**2
+    return Ra_c
 
 class MagnetoConvection(FluidModel):
     def __init__(self, params, sizes, bounds, bounded=False, mode='ecs', dealias=3/2):
@@ -182,10 +198,18 @@ class BoundedQuasiStaticMagnetoConvection(MagnetoConvection):
         dx = lambda A: de.Differentiate(A, self.coords['x']) 
         dz = lambda A: de.Differentiate(A, self.coords['z'])
 
+        Q = self.params['Q']
+        Pr = self.params['Pr']
+        Ra = self.params['Ra']
+        use_scaled_Ra = self.params.get('scale_Ra_c', False)
+        if use_scaled_Ra:
+            Rac = critical_Ra(Q)
+            Ra = Ra*Rac
+
         ns = {'np': np,
-              'Ra':self.params['Ra'],
-              'Pr':self.params['Pr'],
-              'Q':self.params['Q'],
+              'Ra': Ra,
+              'Pr': Pr,
+              'Q': Q,
               'ex': ex, 'ey': ey, 'ez': ez,
               'ux': self.u @ ex,
               'w': self.u @ ez,
@@ -239,9 +263,13 @@ class BoundedQuasiStaticMagnetoConvection(MagnetoConvection):
         ez = self.coords.unit_vector_fields(self.dist)[-1]
         ux = self.u @ ex
         w = self.u @ ez
-        Ra = self.params['Ra']
-        Pr = self.params['Pr']
         Q = self.params['Q']
+        Pr = self.params['Pr']
+        Ra = self.params['Ra']
+        use_scaled_Ra = self.params.get('scale_Ra_c', False)
+        if use_scaled_Ra:
+            Rac = critical_Ra(Q)
+            Ra = Ra*Rac
         #
         z, = self.dist.local_grids(self.bases[-1])
         dz = lambda A: de.Differentiate(A, self.coords['z']) 
@@ -295,9 +323,13 @@ class BoundedQuasiStaticMagnetoConvection(MagnetoConvection):
         ex = self.coords.unit_vector_fields(self.dist)[0]
         ez = self.coords.unit_vector_fields(self.dist)[-1]
         w = self.u @ ez
-        Ra = self.params['Ra']
-        Pr = self.params['Pr']
         Q = self.params['Q']
+        Pr = self.params['Pr']
+        Ra = self.params['Ra']
+        use_scaled_Ra = self.params.get('scale_Ra_c', False)
+        if use_scaled_Ra:
+            Rac = critical_Ra(Q)
+            Ra = Ra*Rac
         if self.dim == 2:
             h_mean = lambda A: de.Average(A,'x')
         else:
