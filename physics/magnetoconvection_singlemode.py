@@ -17,7 +17,7 @@ def kc_to_minimize_critical_Ra(Q):
     return real_roots
 def critical_Ra(Q_val):
     k_c = kc_to_minimize_critical_Ra(Q_val)[0]  # Take the first real root
-    Ra_c = (np.pi**2 + k_c**2)**3 / k_c**2 + Q_val * (np.pi**2 + k_c**2) / k_c**2
+    Ra_c = (np.pi**2 + k_c**2) / k_c**2 * ((np.pi**2 + k_c**2)**2 + np.pi**2 * Q_val)
     return Ra_c
 
 class MagnetoConvection_SingleMode(FluidModel):
