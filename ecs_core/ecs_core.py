@@ -33,7 +33,7 @@ class ECSSolver:
         #
         self.eps_x = (params or {}).get('eps_x', 1e-7)
         self.eps_t = (params or {}).get('eps_t', 1e-6)
-        self.gmres_min_error = (params or {}).get('gmres_min_error', 1e-10)
+        self.gmres_min_error = (params or {}).get('gmres_min_error', 1e-20)
         self.trust_radius_min = (params or {}).get('trust_radius_min', 1e-4)
         self.trust_radius = (params or {}).get('trust_radius', 1.0)
         #
