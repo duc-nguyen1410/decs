@@ -391,6 +391,7 @@ class FluidModel:
             plt.show(block=True)
             
     def F_Tp(self, x0, Tp):
+        gc.collect() # free unreachable objects in system
         MPI.COMM_WORLD.Barrier()
         solver = self.ivp_problem.build_solver(de.RK222)
         self.set_state(x0)
