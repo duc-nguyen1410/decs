@@ -455,7 +455,7 @@ class ECSSolver:
                 self.model.save_state(self.odir + f'solution_iter_{i}')
             else:
                 # save a temporary solution at each iteration for debugging purposes or restarting if needed
-                self.model.save_state(self.odir + 'solution_temp')
+                self.model.save_state(self.odir + 'solution')
             
             nonlinear_res = self.NonlinearOperator(xi)
             norm_b = np.linalg.norm(nonlinear_res)
