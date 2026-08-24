@@ -335,6 +335,7 @@ class Continuation:
                 # Calculate actual arclength step taken
                 ds_actual = compute_step_norm(self.x_history[-1], self.x_history[-2], 
                                           self.mu_history[-1], self.mu_history[-2])
+                ds = ds_actual
                 self.s_history.append(self.s_history[-1] + ds_actual)
                 
                 logger.info(f"Search {self.isearch-1}: Success | {self.mu_name} = {mu_pred:.6f} | Res = {res:.2e}")
