@@ -210,16 +210,14 @@ class Continuation:
             logger.info(f"dsmin == {self.ds_min}")
             logger.info(f"ds    == {ds}")
             logger.info(f"dsmax == {self.ds_max}")
-
+            
+            # Clamp ds strictly within bounds
             if ds > self.ds_max:
-                logger.info(f"ds is out of bounds, ds > ds_max")
-                ds = np.clip(ds * 0.5, self.ds_min, self.ds_max)
-                continue
-
-            if ds < self.ds_min:
-                logger.info(f"ds is out of bounds, ds < ds_min")
-                ds = np.clip(ds * 1.15, self.ds_min, self.ds_max)
-                continue
+                logger.info(f"ds ({ds:.4f}) exceeded ds_max ({self.ds_max}). Capping to ds_max.")
+                ds = self.ds_max
+            elif ds < self.ds_min:
+                logger.info(f"ds ({ds:.4f}) dropped below ds_min ({self.ds_min}). Raising to ds_min.")
+                ds = self.ds_min
 
             success = False
             # Predictor / Inner Adjustment Loop
@@ -320,14 +318,18 @@ class Continuation:
                     break # Guess is acceptable, proceed to solve
                 elif guess_err < self.guess_error_min:
                     # Guess error is too low
+                    if np.isclose(ds, self.ds_max):
+                        break  # Already at max step size; proceed with corrector
                     # Increase ds
                     ds = np.clip(ds * 1.15, self.ds_min, self.ds_max)
+                    continue
                 else:
                     # Guess error is too high (Newton will likely fail)
                     # Shrink ds and re-predict within this adjustment loop
                     ds_suggested = ds * (self.guesserrtarget / guess_err)**(1/3)
                     # Enforce both upper and lower bounds during step scaling
                     ds = np.clip(ds_suggested, self.ds_min, self.ds_max)
+                    continue
 
             # Corrector (Direct Newton Call)
             sol, success, res, norm, properties = self.step_continuation(x_pred, mu_pred)
@@ -350,14 +352,9 @@ class Continuation:
                 # Calculate actual arclength step taken
                 ds_actual = compute_step_norm(self.x_history[-1], self.x_history[-2], 
                                           self.mu_history[-1], self.mu_history[-2])
-                ds = ds_actual
                 self.s_history.append(self.s_history[-1] + ds_actual)
-                
+                ds = np.clip(ds * 1.05, self.ds_min, self.ds_max)
                 logger.info(f"Search {self.isearch-1}: Success | {self.mu_name} = {mu_pred:.6f} | Res = {res:.2e}")
-
-                # Modest step size growth (only if guess quality was very high)
-                # if guess_err < self.guess_error_min:
-                #     
 
                 step += 1  # Advance step counter only on success
             else:
