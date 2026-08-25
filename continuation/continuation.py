@@ -207,6 +207,20 @@ class Continuation:
                     logger.info("Reached or crossed target mu.")
                     break
 
+            logger.info(f"dsmin == {self.ds_min}")
+            logger.info(f"ds    == {ds}")
+            logger.info(f"dsmax == {self.ds_max}")
+
+            if ds > self.ds_max:
+                logger.info(f"ds is out of bounds, ds > ds_max")
+                ds = np.clip(ds * 0.5, self.ds_min, self.ds_max)
+                continue
+
+            if ds < self.ds_min:
+                logger.info(f"ds is out of bounds, ds < ds_min")
+                ds = np.clip(ds * 1.15, self.ds_min, self.ds_max)
+                continue
+
             success = False
             # Predictor / Inner Adjustment Loop
             for iadjust in range(self.Ndsadjust):
@@ -297,22 +311,23 @@ class Continuation:
                 logger.info(f"guesserrmax == {self.guess_error_max}")
 
                 if self.Tsearch and (Tp_pred is None or Tp_pred <= 0):
-                    logger.warning(f"Non-positive Tp predicted ({Tp_pred}). Shrinking ds...")
+                    logger.info(f"Non-positive Tp predicted ({Tp_pred}). Shrinking ds...")
                     ds = max(ds * 0.5, self.ds_min)
                     continue  # Retry prediction loop with smaller ds
 
                 # Evaluate initial guess quality
-                if guess_err <= self.guess_error_max:
+                if self.guess_error_min <= guess_err and guess_err <= self.guess_error_max:
                     break # Guess is acceptable, proceed to solve
+                elif guess_err < self.guess_error_min:
+                    # Guess error is too low
+                    # Increase ds
+                    ds = np.clip(ds * 1.15, self.ds_min, self.ds_max)
                 else:
                     # Guess error is too high (Newton will likely fail)
                     # Shrink ds and re-predict within this adjustment loop
                     ds_suggested = ds * (self.guesserrtarget / guess_err)**(1/3)
                     # Enforce both upper and lower bounds during step scaling
-                    ds_new = np.clip(ds_suggested, self.ds_min, self.ds_max)
-                    if np.isclose(ds_new, ds): # Hit ds_min limit
-                        break # Reached ds_min limit, attempt solve anyway
-                    ds = ds_new
+                    ds = np.clip(ds_suggested, self.ds_min, self.ds_max)
 
             # Corrector (Direct Newton Call)
             sol, success, res, norm, properties = self.step_continuation(x_pred, mu_pred)
@@ -341,8 +356,8 @@ class Continuation:
                 logger.info(f"Search {self.isearch-1}: Success | {self.mu_name} = {mu_pred:.6f} | Res = {res:.2e}")
 
                 # Modest step size growth (only if guess quality was very high)
-                if guess_err < self.guess_error_min:
-                    ds = min(ds * 1.15, self.ds_max)
+                # if guess_err < self.guess_error_min:
+                #     
 
                 step += 1  # Advance step counter only on success
             else:
