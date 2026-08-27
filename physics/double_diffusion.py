@@ -872,6 +872,12 @@ class ShearedDiffusiveConvection_Radko2016(DoubleDiffusion):
         meanprofiles.add_task(h_mean(self.u), name='u') # horizontal averaged x-axis velocity
         meanprofiles.add_task(h_mean(self.te), name='te') # horizontal averaged temperature
         meanprofiles.add_task(h_mean(self.sa), name='sa') # horizontal averaged sanility
+        u_prime = self.u - h_mean(self.u)
+        te_prime = self.te - h_mean(self.te)
+        sa_prime = self.sa - h_mean(self.sa)
+        meanprofiles.add_task(de.sqrt(h_mean(u_prime**2)), name="u_rms")
+        meanprofiles.add_task(de.sqrt(h_mean(te_prime**2)), name="te_rms")
+        meanprofiles.add_task(de.sqrt(h_mean(sa_prime**2)), name="sa_rms")
 
 
 ########################################################################################
