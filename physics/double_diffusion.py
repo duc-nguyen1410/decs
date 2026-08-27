@@ -268,7 +268,7 @@ class SaltFinger(DoubleDiffusion):
         if self.dim == 2:
             h_mean = lambda A: de.Average(A,'x')
         else:
-            h_mean = lambda A: de.Average(A,'x','y')
+            h_mean = lambda A: de.Average(A,('x', 'y'))
         meanprofiles = solver.evaluator.add_file_handler(self.odir+'meanprofiles', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
         meanprofiles.add_task(h_mean(self.u), name='u') # horizontal averaged x-axis velocity
         meanprofiles.add_task(h_mean(self.te), name='te') # horizontal averaged temperature
@@ -373,7 +373,7 @@ class BoundedSaltFinger(DoubleDiffusion):
         if self.dim == 2:
             h_mean = lambda A: de.Average(A,'x')
         else:
-            h_mean = lambda A: de.Average(A,'x','y')
+            h_mean = lambda A: de.Average(A,('x', 'y'))
         # Heat and salt fluxes
         Jt = 1-h_mean(dz(self.te))(z=0)
         Js = 1-h_mean(dz(self.sa))(z=0)
@@ -430,7 +430,7 @@ class BoundedSaltFinger(DoubleDiffusion):
         if self.dim == 2:
             h_mean = lambda A: de.Average(A,'x')
         else:
-            h_mean = lambda A: de.Average(A,'x','y')
+            h_mean = lambda A: de.Average(A,('x', 'y'))
         flowproperties = solver.evaluator.add_file_handler(self.odir+'flowproperties', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
         flowproperties.add_task(1 - h_mean(dz(self.te))(z=Lz/2), name='Jt')
         flowproperties.add_task(1 - h_mean(dz(self.sa))(z=Lz/2), name='Js')
@@ -446,7 +446,7 @@ class BoundedSaltFinger(DoubleDiffusion):
         if self.dim == 2:
             h_mean = lambda A: de.Average(A,'x')
         else:
-            h_mean = lambda A: de.Average(A,'x','y')
+            h_mean = lambda A: de.Average(A,('x', 'y'))
         meanprofiles = solver.evaluator.add_file_handler(self.odir+'meanprofiles', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
         meanprofiles.add_task(h_mean(self.u), name='u') # horizontal averaged x-axis velocity
         meanprofiles.add_task(h_mean(self.te), name='te') # horizontal averaged temperature
@@ -682,7 +682,7 @@ class ShearedDiffusiveConvection(DoubleDiffusion):
         if self.dim == 2:
             h_mean = lambda A: de.Average(A,'x')
         else:
-            h_mean = lambda A: de.Average(A,'x','y')
+            h_mean = lambda A: de.Average(A,('x', 'y'))
         flowproperties = solver.evaluator.add_file_handler(self.odir+'flowproperties', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
         flowproperties.add_task(1+np.sqrt(Pr*Ra)*de.Average(w*self.te), name='Nu') # Nusselt number
         flowproperties.add_task(1+np.sqrt(Pr*Ra)/tau*de.Average(w*self.sa), name='Sh') # Sherwood number
@@ -700,7 +700,7 @@ class ShearedDiffusiveConvection(DoubleDiffusion):
         if self.dim == 2:
             h_mean = lambda A: de.Average(A,'x')
         else:
-            h_mean = lambda A: de.Average(A,'x','y')
+            h_mean = lambda A: de.Average(A,('x', 'y'))
         meanprofiles = solver.evaluator.add_file_handler(self.odir+'meanprofiles', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
         meanprofiles.add_task(h_mean(self.u), name='u') # horizontal averaged x-axis velocity
         meanprofiles.add_task(h_mean(self.te), name='te') # horizontal averaged temperature
@@ -849,7 +849,7 @@ class ShearedDiffusiveConvection_Radko2016(DoubleDiffusion):
         if self.dim == 2:
             h_mean = lambda A: de.Average(A,'x')
         else:
-            h_mean = lambda A: de.Average(A,'x','y')
+            h_mean = lambda A: de.Average(A,('x', 'y'))
         flowproperties = solver.evaluator.add_file_handler(self.odir+'flowproperties', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
         flowproperties.add_task(1+Pe*de.Average(w*self.te), name='Nu') # Nusselt number
         flowproperties.add_task(1+Pe/tau*de.Average(w*self.sa), name='Sh') # Sherwood number
@@ -867,7 +867,7 @@ class ShearedDiffusiveConvection_Radko2016(DoubleDiffusion):
         if self.dim == 2:
             h_mean = lambda A: de.Average(A,'x')
         else:
-            h_mean = lambda A: de.Average(A,'x','y')
+            h_mean = lambda A: de.Average(A,('x', 'y'))
         meanprofiles = solver.evaluator.add_file_handler(self.odir+'meanprofiles', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
         meanprofiles.add_task(h_mean(self.u), name='u') # horizontal averaged x-axis velocity
         meanprofiles.add_task(h_mean(self.te), name='te') # horizontal averaged temperature
@@ -983,7 +983,7 @@ class WallShearedDiffusiveConvection(DoubleDiffusion):
         if self.dim == 2:
             h_mean = lambda A: de.Average(A,'x')
         else:
-            h_mean = lambda A: de.Average(A,'x','y')
+            h_mean = lambda A: de.Average(A,('x', 'y'))
         # Heat and salt fluxes
         Jt = 1.0-h_mean(dz(self.te))(z=0)
         Js = 1.0-h_mean(dz(self.sa))(z=0)
@@ -1046,7 +1046,7 @@ class WallShearedDiffusiveConvection(DoubleDiffusion):
         if self.dim == 2:
             h_mean = lambda A: de.Average(A,'x')
         else:
-            h_mean = lambda A: de.Average(A,'x','y')
+            h_mean = lambda A: de.Average(A,('x', 'y'))
         flowproperties = solver.evaluator.add_file_handler(self.odir+'flowproperties', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
         flowproperties.add_task(1-h_mean(dz(self.te))(z=0), name='Jt') # heat flux at wall
         flowproperties.add_task(1-h_mean(dz(self.sa))(z=0), name='Js') # mass flux at wall
@@ -1066,7 +1066,7 @@ class WallShearedDiffusiveConvection(DoubleDiffusion):
         if self.dim == 2:
             h_mean = lambda A: de.Average(A,'x')
         else:
-            h_mean = lambda A: de.Average(A,'x','y')
+            h_mean = lambda A: de.Average(A,('x', 'y'))
         meanprofiles = solver.evaluator.add_file_handler(self.odir+'meanprofiles', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
         meanprofiles.add_task(h_mean(self.u), name='u') # horizontal averaged x-axis velocity
         meanprofiles.add_task(h_mean(self.te), name='te') # horizontal averaged temperature

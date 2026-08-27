@@ -276,7 +276,7 @@ class BoundedQuasiStaticMagnetoConvection(MagnetoConvection):
         if self.dim == 2:
             h_mean = lambda A: de.Average(A,'x')
         else:
-            h_mean = lambda A: de.Average(A,'x','y')
+            h_mean = lambda A: de.Average(A,('x', 'y'))
         # [1] plane Nusselt number
         Nu_p = 1-h_mean(dz(self.te))(z=0) # plane Nusselt number
         # [2] volume average
@@ -333,7 +333,7 @@ class BoundedQuasiStaticMagnetoConvection(MagnetoConvection):
         if self.dim == 2:
             h_mean = lambda A: de.Average(A,'x')
         else:
-            h_mean = lambda A: de.Average(A,'x','y')
+            h_mean = lambda A: de.Average(A,('x', 'y'))
         dz = lambda A: de.Differentiate(A, self.coords['z'])
         z, = self.dist.local_grids(self.bases[-1])
         flowproperties = solver.evaluator.add_file_handler(self.odir+'flowproperties', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
@@ -346,7 +346,7 @@ class BoundedQuasiStaticMagnetoConvection(MagnetoConvection):
         if self.dim == 2:
             h_mean = lambda A: de.Average(A,'x')
         else:
-            h_mean = lambda A: de.Average(A,'x','y')
+            h_mean = lambda A: de.Average(A,('x', 'y'))
         ex = self.coords.unit_vector_fields(self.dist)[0]
         ez = self.coords.unit_vector_fields(self.dist)[-1]
         meanprofiles = solver.evaluator.add_file_handler(self.odir+'meanprofiles', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
