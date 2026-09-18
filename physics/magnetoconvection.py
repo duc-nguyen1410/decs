@@ -201,18 +201,19 @@ class BoundedQuasiStaticMagnetoConvection(MagnetoConvection):
         Q = self.params['Q']
         Pr = self.params['Pr']
         Ra = self.params['Ra']
-        use_scaled_Ra = self.params.get('scale_Ra_c', False)
-        if use_scaled_Ra:
+        if self.params.get('scale_Ra_c', False):
             Rac = critical_Ra(Q)
             Ra = Ra*Rac
 
+        # PARAMETERS / BACKGROUND FIELDS (The Knowns)
+        self.Ra_param = self.dist.Field(name='Ra_param'); self.Ra_param['g'] = Ra
+        self.Pr_param = self.dist.Field(name='Pr_param'); self.Pr_param['g'] = Pr
+        self.Q_param = self.dist.Field(name='Q_param'); self.Q_param['g'] = Q
+
         ns = {'np': np,
-              'Ra': Ra,
-              'Pr': Pr,
-              'Q': Q,
+              'Ra': self.Ra_param, 'Pr': self.Pr_param, 'Q': self.Q_param,
               'ex': ex, 'ey': ey, 'ez': ez,
-              'ux': self.u @ ex,
-              'w': self.u @ ez,
+              'ux': self.u @ ex, 'w': self.u @ ez,
               'grad_u': grad_u, 'grad_te': grad_te,
               'lap_u': lap_u, 'lap_te': lap_te, 
               'dx': dx, 'dz': dz,
@@ -237,8 +238,7 @@ class BoundedQuasiStaticMagnetoConvection(MagnetoConvection):
         if self.dim == 3:
             self.ivp_problem.add_equation("lap_Phi + lift(tau_Phi2) + tau_Phi_gauge = div(cross(u, ez))")
             self.ivp_problem.add_equation("integ(Phi) = 0")
-
-        if self.params['stress-free']: # Stress-free boundary condition
+        if self.params.get('stress-free', False): # Stress-free boundary condition
             self.ivp_problem.add_equation("w(z='left') = 0") # No penetration
             self.ivp_problem.add_equation("dz(ux)(z='left') = 0") # Stress-free
             if self.dim==3:

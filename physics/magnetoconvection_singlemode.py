@@ -182,15 +182,17 @@ class BoundedQuasiStaticMagnetoConvection_SingleMode(MagnetoConvection_SingleMod
         Q = self.params['Q']
         Pr = self.params['Pr']
         Ra = self.params['Ra']
-        use_scaled_Ra = self.params.get('scale_Ra_c', False)
-        if use_scaled_Ra:
+        if self.params.get('scale_Ra_c', False):
             Rac = critical_Ra(Q)
             Ra = Ra*Rac
 
+        # PARAMETERS / BACKGROUND FIELDS (The Knowns)
+        self.Ra_param = self.dist.Field(name='Ra_param'); self.Ra_param['g'] = Ra
+        self.Pr_param = self.dist.Field(name='Pr_param'); self.Pr_param['g'] = Pr
+        self.Q_param = self.dist.Field(name='Q_param'); self.Q_param['g'] = Q
+
         ns = {'np': np,
-              'Ra': Ra,
-              'Pr': Pr,
-              'Q': Q,
+              'Ra': self.Ra_param, 'Pr': self.Pr_param, 'Q': self.Q_param,
               'kx': self.params['kx'], 'ky': self.params['ky'], 
               'k2': self.params['kx']**2 + self.params['ky']**2,
               'dz': dz,
@@ -232,7 +234,7 @@ class BoundedQuasiStaticMagnetoConvection_SingleMode(MagnetoConvection_SingleMod
         # boundary condition
         self.ivp_problem.add_equation("w(z='left') = 0") # No penetration
         self.ivp_problem.add_equation("w(z='right') = 0") # No penetration
-        if self.params['stress-free']: # Stress-free
+        if self.params.get('stress-free', False): # Stress-free
             self.ivp_problem.add_equation("dz(u)(z='left') = 0")
             self.ivp_problem.add_equation("dz(u)(z='right') = 0")
             self.ivp_problem.add_equation("dz(v)(z='left') = 0")

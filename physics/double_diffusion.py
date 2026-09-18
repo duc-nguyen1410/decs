@@ -140,12 +140,15 @@ class SaltFinger(DoubleDiffusion):
             ey = None # Or a zero-field if needed
         else:
             ex, ey, ez = unit_vectors
+
+        # PARAMETERS / BACKGROUND FIELDS (The Knowns)
+        self.Ra_param = self.dist.Field(name='Ra_param'); self.Ra_param['g'] = self.params['Ra']
+        self.Pr_param = self.dist.Field(name='Pr_param'); self.Pr_param['g'] = self.params['Pr']
+        self.Rrho_param = self.dist.Field(name='Rrho_param'); self.Rrho_param['g'] = self.params['Rrho']
+        self.tau_param = self.dist.Field(name='tau_param'); self.tau_param['g'] = self.params['tau']
         
         ns = {'np': np,
-              'Ra':self.params['Ra'],
-              'Pr':self.params['Pr'],
-              'Rrho':self.params['Rrho'],
-              'tau':self.params['tau'],
+              'Ra': self.Ra_param, 'Pr': self.Pr_param, 'Rrho': self.Rrho_param, 'tau': self.tau_param,
               'ex': ex, 'ey': ey, 'ez': ez,
               'w': self.u @ ez,
              }
@@ -213,6 +216,8 @@ class SaltFinger(DoubleDiffusion):
         Rrho = self.params['Rrho']
         tau = self.params['tau']
         # Nusselt and Sherwood numbers 
+        Ft = de.Average(w*self.te)
+        Fs = de.Average(w*self.sa)
         Nu = 1 - de.Average(w*self.te)
         Sh = 1 - de.Average(w*self.sa)/tau
         # Energy
@@ -223,6 +228,8 @@ class SaltFinger(DoubleDiffusion):
         I_s = de.Average(-Pr*Ra*self.sa*w/Rrho) # kinetic energy input by salinity-induced bouyancy
         # .evaluate() returns a field object
         # ['g'] accesses the grid data
+        Ft_val = Ft.evaluate()['g'].real
+        Fs_val = Fs.evaluate()['g'].real
         # Nusselt and Sherwood numbers 
         Nu_val = Nu.evaluate()['g'].real
         Sh_val = Sh.evaluate()['g'].real
@@ -231,7 +238,9 @@ class SaltFinger(DoubleDiffusion):
         I_t_val = I_t.evaluate()['g'].real
         I_s_val = I_s.evaluate()['g'].real
         if self.dist.comm.rank == 0:
-            return {'Nu': float(Nu_val.item()),
+            return {'Ft': float(Ft_val.item()),
+                    'Fs': float(Fs_val.item()),
+                    'Nu': float(Nu_val.item()),
                     'Sh': float(Sh_val.item()),
                     'D': float(D_val.item()),
                     'I': float(I_val.item()),
@@ -310,20 +319,21 @@ class BoundedSaltFinger(DoubleDiffusion):
         dx = lambda A: de.Differentiate(A, self.coords['x']) 
         dz = lambda A: de.Differentiate(A, self.coords['z']) 
 
-        baru = self.dist.Field(bases=self.bases[-1])
+        # PARAMETERS / BACKGROUND FIELDS (The Knowns)
+        self.Ra_param = self.dist.Field(name='Ra_param'); self.Ra_param['g'] = self.params['Ra']
+        self.Pr_param = self.dist.Field(name='Pr_param'); self.Pr_param['g'] = self.params['Pr']
+        self.Rrho_param = self.dist.Field(name='Rrho_param'); self.Rrho_param['g'] = self.params['Rrho']
+        self.tau_param = self.dist.Field(name='tau_param'); self.tau_param['g'] = self.params['tau']
+        self.Ri_param = self.dist.Field(name='Ri_param'); self.Ri_param['g'] = self.params['Ri']
+
         ns = {'np': np,
-              'Ra':self.params['Ra'],
-              'Pr':self.params['Pr'],
-              'Rrho':self.params['Rrho'],
-              'tau':self.params['tau'],
-              'Ri':self.params['Ri'],
+              'Ra': self.Ra_param, 'Pr': self.Pr_param, 'Rrho': self.Rrho_param, 'tau': self.tau_param, 'Ri': self.Ri_param,
               'ex': ex, 'ey': ey, 'ez': ez,
               'w': self.u @ ez,
               'lift': lift,
               'grad_u': grad_u, 'grad_te': grad_te, 'grad_sa': grad_sa, 
               'lap_u': lap_u, 'lap_te': lap_te, 'lap_sa': lap_sa,
               'dx': dx, 'dz': dz,
-              'baru': baru,
              }
         
         vars = [self.p, self.u, self.te, self.sa, 
@@ -341,7 +351,7 @@ class BoundedSaltFinger(DoubleDiffusion):
         self.ivp_problem.add_equation("te(z='right') = 0")
         self.ivp_problem.add_equation("sa(z='left') = 0")
         self.ivp_problem.add_equation("sa(z='right') = 0")
-        if self.params['stress-free']:
+        if self.params.get('stress-free', False):
             self.ivp_problem.add_equation("w(z='left') = 0")
             self.ivp_problem.add_equation("dz(ux)(z='left') = 0")
             if self.dim==3:
@@ -474,11 +484,14 @@ class DiffusiveConvection(DoubleDiffusion):
         else:
             ex, ey, ez = unit_vectors
 
+        # PARAMETERS / BACKGROUND FIELDS (The Knowns)
+        self.Ra_param = self.dist.Field(name='Ra_param'); self.Ra_param['g'] = self.params['Ra']
+        self.Pr_param = self.dist.Field(name='Pr_param'); self.Pr_param['g'] = self.params['Pr']
+        self.Lambda_param = self.dist.Field(name='Lambda_param'); self.Lambda_param['g'] = self.params['Lambda']
+        self.tau_param = self.dist.Field(name='tau_param'); self.tau_param['g'] = self.params['tau']
+
         ns = {'np': np,
-              'Ra':self.params['Ra'],
-              'Pr':self.params['Pr'],
-              'Lambda':self.params['Lambda'],
-              'tau':self.params['tau'],
+              'Ra': self.Ra_param, 'Pr': self.Pr_param, 'Lambda': self.Lambda_param, 'tau': self.tau_param,
               'ex': ex, 'ey': ey, 'ez': ez,
               'w': self.u @ ez,
              }
@@ -512,11 +525,14 @@ class DiffusiveConvection(DoubleDiffusion):
         else:
             ex, ey, ez = unit_vectors
 
+        # PARAMETERS / BACKGROUND FIELDS (The Knowns)
+        self.Ra_param = self.dist.Field(name='Ra_param'); self.Ra_param['g'] = self.params['Ra']
+        self.Pr_param = self.dist.Field(name='Pr_param'); self.Pr_param['g'] = self.params['Pr']
+        self.Lambda_param = self.dist.Field(name='Lambda_param'); self.Lambda_param['g'] = self.params['Lambda']
+        self.tau_param = self.dist.Field(name='tau_param'); self.tau_param['g'] = self.params['tau']
+
         ns = {'np': np,
-              'Ra':self.params['Ra'],
-              'Pr':self.params['Pr'],
-              'Lambda':self.params['Lambda'],
-              'tau':self.params['tau'],
+              'Ra': self.Ra_param, 'Pr': self.Pr_param, 'Lambda': self.Lambda_param, 'tau': self.tau_param,
               'ex': ex, 'ey': ey, 'ez': ez,
               'w': self.u @ ez,
               'u_eq': self.u_eq, 'te_eq': self.te_eq, 'sa_eq': self.sa_eq,
@@ -567,22 +583,22 @@ class ShearedDiffusiveConvection(DoubleDiffusion):
 
         dx = lambda A: de.Differentiate(A, self.coords['x']) 
         dz = lambda A: de.Differentiate(A, self.coords['z']) 
-
-        baru = self.dist.Field(bases=self.bases[-1])
-        A_s = np.sqrt((self.params['Lambda']-1.0)/self.params['Ri'])
-        
         z, = self.dist.local_grids(self.bases[-1])
-        baru['g'] = A_s*np.sin(2*np.pi*z)
+
+        # PARAMETERS / BACKGROUND FIELDS (The Knowns)
+        self.Ra_param = self.dist.Field(name='Ra_param'); self.Ra_param['g'] = self.params['Ra']
+        self.Pr_param = self.dist.Field(name='Pr_param'); self.Pr_param['g'] = self.params['Pr']
+        self.Lambda_param = self.dist.Field(name='Lambda_param'); self.Lambda_param['g'] = self.params['Lambda']
+        self.tau_param = self.dist.Field(name='tau_param'); self.tau_param['g'] = self.params['tau']
+        self.Ri_param = self.dist.Field(name='Ri_param'); self.Ri_param['g'] = self.params['Ri']
+
+        A_s = np.sqrt((self.params['Lambda']-1.0)/self.params['Ri'])
+        baru = self.dist.Field(bases=self.bases[-1]); baru['g'] = A_s*np.sin(2*np.pi*z)
 
         ns = {'np': np,
-              'Ra':self.params['Ra'],
-              'Pr':self.params['Pr'],
-              'Lambda':self.params['Lambda'],
-              'tau':self.params['tau'],
-              'Ri':self.params['Ri'],
+              'Ra': self.Ra_param, 'Pr': self.Pr_param, 'Lambda': self.Lambda_param, 'tau': self.tau_param, 'Ri': self.Ri_param,
               'ex': ex, 'ey': ey, 'ez': ez,
-              'ux': self.u @ ex,
-              'w': self.u @ ez,
+              'ux': self.u @ ex, 'w': self.u @ ez,
               'grad_u': grad_u, 'grad_te': grad_te, 'grad_sa': grad_sa, 
               'lap_u': lap_u, 'lap_te': lap_te, 'lap_sa': lap_sa,
               'dx': dx, 'dz': dz,
@@ -596,11 +612,8 @@ class ShearedDiffusiveConvection(DoubleDiffusion):
         # Governing Equations
         self.ivp_problem.add_equation("trace(grad_u) + tau_p = 0")
         self.ivp_problem.add_equation("integ(p) = 0") 
-        if 'stokes' in self.params:
-            if self.params['stokes']:
-                self.ivp_problem.add_equation("grad(p) - np.sqrt(Pr/Ra)*lap_u - (te-Lambda*sa)*ez + tau_u = 0")
-            else:
-                self.ivp_problem.add_equation("dt(u) + baru*dx(u) + w*dz(baru)*ex + grad(p) - np.sqrt(Pr/Ra)*lap_u - (te-Lambda*sa)*ez + tau_u = - u@grad(u)")
+        if self.params.get('stokes', False):
+            self.ivp_problem.add_equation("grad(p) - np.sqrt(Pr/Ra)*lap_u - (te-Lambda*sa)*ez + tau_u = 0")
         else:
             self.ivp_problem.add_equation("dt(u) + baru*dx(u) + w*dz(baru)*ex + grad(p) - np.sqrt(Pr/Ra)*lap_u - (te-Lambda*sa)*ez + tau_u = - u@grad(u)")
         self.ivp_problem.add_equation("dt(te) + baru*dx(te) - (1.0/np.sqrt(Pr*Ra))*lap_te - w + tau_te = - u@grad(te)")
@@ -788,6 +801,8 @@ class ShearedDiffusiveConvection_Radko2016(DoubleDiffusion):
         baru = self.dist.Field(bases=self.bases[-1])
         A_s = np.sqrt((Lambda-1.0)/Ri)
         baru['g'] = A_s*np.sin(2*np.pi*z)
+        Ft = de.Average(w*self.te)
+        Fs = de.Average(w*self.sa)
         # Nusselt and Sherwood numbers 
         Nu = 1 + de.Average(w*self.te)*Pe
         Sh = 1 + de.Average(w*self.sa)*Pe/tau
@@ -804,6 +819,8 @@ class ShearedDiffusiveConvection_Radko2016(DoubleDiffusion):
         # .evaluate() returns a field object
         # ['g'] accesses the grid data
         # Nusselt and Sherwood numbers 
+        Ft_val = Ft.evaluate()['g'].real
+        Fs_val = Fs.evaluate()['g'].real
         Nu_val = Nu.evaluate()['g'].real
         Sh_val = Sh.evaluate()['g'].real
         D_val = D.evaluate()['g'].real
@@ -812,7 +829,9 @@ class ShearedDiffusiveConvection_Radko2016(DoubleDiffusion):
         I_s_val = I_s.evaluate()['g'].real
         I_shear_val = I_shear.evaluate()['g'].real
         if self.dist.comm.rank == 0:
-            return {'Nu': float(Nu_val.item()),
+            return {'Ft': float(Ft_val.item()),
+                    'Fs': float(Fs_val.item()),
+                    'Nu': float(Nu_val.item()),
                     'Sh': float(Sh_val.item()),
                     'D': float(D_val.item()),
                     'I_shear': float(I_shear_val.item()),
@@ -844,10 +863,7 @@ class ShearedDiffusiveConvection_Radko2016(DoubleDiffusion):
         baru = self.dist.Field(bases=self.bases[-1])
         A_s = np.sqrt((Lambda-1.0)/Ri)
         baru['g'] = A_s*np.sin(2*np.pi*z)
-        if self.dim == 2:
-            h_mean = lambda A: de.Average(A,'x')
-        else:
-            h_mean = lambda A: de.Average(A,('x', 'y'))
+
         flowproperties = solver.evaluator.add_file_handler(self.odir+'flowproperties', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
         flowproperties.add_task(1+Pe*de.Average(w*self.te), name='Nu') # Nusselt number
         flowproperties.add_task(1+Pe/tau*de.Average(w*self.sa), name='Sh') # Sherwood number
@@ -913,23 +929,23 @@ class WallShearedDiffusiveConvection(DoubleDiffusion):
 
         dx = lambda A: de.Differentiate(A, self.coords['x']) 
         dz = lambda A: de.Differentiate(A, self.coords['z']) 
-
-        baru = self.dist.Field(bases=self.bases[-1])
-        Uw = 1.0/np.sqrt(self.params['Ri'])
-        
         z, = self.dist.local_grids(self.bases[-1])
         Lz = self.bases[-1].bounds[1]
-        baru['g'] = (z-Lz/2)*Uw
+    
+        # PARAMETERS / BACKGROUND FIELDS (The Knowns)
+        self.Ra_param = self.dist.Field(name='Ra_param'); self.Ra_param['g'] = self.params['Ra']
+        self.Ri_param = self.dist.Field(name='Ri_param'); self.Ri_param['g'] = self.params['Ri']
+        self.Pr_param = self.dist.Field(name='Pr_param'); self.Pr_param['g'] = self.params['Pr']
+        self.Lambda_param = self.dist.Field(name='Lambda_param'); self.Lambda_param['g'] = self.params['Lambda']
+        self.tau_param = self.dist.Field(name='tau_param'); self.tau_param['g'] = self.params['tau']
+
+        Uw = 1.0/np.sqrt(self.params['Ri'])
+        baru = self.dist.Field(bases=self.bases[-1]); baru['g'] = (z-Lz/2)*Uw
 
         ns = {'np': np,
-              'Ra':self.params['Ra'],
-              'Pr':self.params['Pr'],
-              'Lambda':self.params['Lambda'],
-              'tau':self.params['tau'],
-              'Ri':self.params['Ri'],
+              'Ra': self.Ra_param, 'Pr': self.Pr_param, 'Lambda': self.Lambda_param, 'tau': self.tau_param, 'Ri': self.Ri_param,
               'ex': ex, 'ey': ey, 'ez': ez,
-              'ux': self.u @ ex,
-              'w': self.u @ ez,
+              'ux': self.u @ ex, 'w': self.u @ ez,
               'lift': lift,
               'grad_u': grad_u, 'grad_te': grad_te, 'grad_sa': grad_sa, 
               'lap_u': lap_u, 'lap_te': lap_te, 'lap_sa': lap_sa,
