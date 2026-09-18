@@ -726,6 +726,7 @@ class ShearedDiffusiveConvection_Radko2016(DoubleDiffusion):
             ey = None # Or a zero-field if needed
         else:
             ex, ey, ez = unit_vectors
+        z, = self.dist.local_grids(self.bases[-1])
 
         grad_u = de.grad(self.u)
         grad_te = de.grad(self.te)
@@ -737,19 +738,19 @@ class ShearedDiffusiveConvection_Radko2016(DoubleDiffusion):
         dx = lambda A: de.Differentiate(A, self.coords['x']) 
         dz = lambda A: de.Differentiate(A, self.coords['z']) 
 
-        baru = self.dist.Field(bases=self.bases[-1])
-        z, = self.dist.local_grids(self.bases[-1])
-        baru['g'] = np.sin(2*np.pi*z)
+        # PARAMETERS / BACKGROUND FIELDS (The Knowns)
+        self.Pe_param = self.dist.Field(name='Pe_param'); self.Pe_param['g'] = self.params['Pe']
+        self.Ri_param = self.dist.Field(name='Ri_param'); self.Ri_param['g'] = self.params['Ri']
+        self.Pr_param = self.dist.Field(name='Pr_param'); self.Pr_param['g'] = self.params['Pr']
+        self.Lambda_param = self.dist.Field(name='Lambda_param'); self.Lambda_param['g'] = self.params['Lambda']
+        self.tau_param = self.dist.Field(name='tau_param'); self.tau_param['g'] = self.params['tau']
+
+        baru = self.dist.Field(bases=self.bases[-1]); baru['g'] = np.sin(2*np.pi*z)
 
         ns = {'np': np,
-              'Pe':self.params['Pe'],
-              'Pr':self.params['Pr'],
-              'Lambda':self.params['Lambda'],
-              'tau':self.params['tau'],
-              'Ri':self.params['Ri'],
+              'Pe': self.Pe_param, 'Pr': self.Pr_param, 'Lambda': self.Lambda_param, 'tau': self.tau_param, 'Ri': self.Ri_param,
               'ex': ex, 'ey': ey, 'ez': ez,
-              'ux': self.u @ ex,
-              'w': self.u @ ez,
+              'ux': self.u @ ex, 'w': self.u @ ez,
               'grad_u': grad_u, 'grad_te': grad_te, 'grad_sa': grad_sa, 
               'lap_u': lap_u, 'lap_te': lap_te, 'lap_sa': lap_sa,
               'dx': dx, 'dz': dz,
@@ -757,17 +758,13 @@ class ShearedDiffusiveConvection_Radko2016(DoubleDiffusion):
              }
         vars = [self.p, self.u, self.te, self.sa, 
                 tau_p, tau_u, tau_te, tau_sa]
-        # if self.params['stokes']:
-        #     vars.append(tau_u)
         self.ivp_problem = de.IVP(vars, namespace=ns)
+
         # Governing Equations
         self.ivp_problem.add_equation("trace(grad_u) + tau_p = 0")
         self.ivp_problem.add_equation("integ(p) = 0") 
-        if 'stokes' in self.params:
-            if self.params['stokes']:
-                self.ivp_problem.add_equation("grad(p) - Pr/Pe*lap_u - (4*(np.pi**2)*Ri)/(Lambda-1)*(te-sa)*ez + tau_u = 0")
-            else:
-                self.ivp_problem.add_equation("dt(u) + baru*dx(u) + w*dz(baru)*ex + grad(p) - Pr/Pe*lap_u - (4*(np.pi**2)*Ri)/(Lambda-1)*(te-sa)*ez + tau_u = - u@grad(u)")
+        if self.params.get('stokes', False):
+            self.ivp_problem.add_equation("grad(p) - Pr/Pe*lap_u - (4*(np.pi**2)*Ri)/(Lambda-1)*(te-sa)*ez + tau_u = 0")
         else:
             self.ivp_problem.add_equation("dt(u) + baru*dx(u) + w*dz(baru)*ex + grad(p) - Pr/Pe*lap_u - (4*(np.pi**2)*Ri)/(Lambda-1)*(te-sa)*ez + tau_u = - u@grad(u)")
         self.ivp_problem.add_equation("dt(te) + baru*dx(te) - (1.0/Pe)*lap_te - w + tau_te = - u@grad(te)")
@@ -775,6 +772,7 @@ class ShearedDiffusiveConvection_Radko2016(DoubleDiffusion):
         self.ivp_problem.add_equation("integ(u) = 0") 
         self.ivp_problem.add_equation("integ(te) = 0") 
         self.ivp_problem.add_equation("integ(sa) = 0") 
+
     def get_flow_properties(self):
         ex = self.coords.unit_vector_fields(self.dist)[0]
         ez = self.coords.unit_vector_fields(self.dist)[-1]

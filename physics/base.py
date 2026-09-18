@@ -59,13 +59,13 @@ class FluidModel:
         self.preview_im = None
     
     def set_param(self, name, value):
-        """Update a parameter and return True if a domain rebuild is needed."""
+        """ Update a parameter and rebuild grid if needed. """
         logger.info(f"Setting parameter {name} = {value}")
 
         # Define geometry parameters that control domain bounds
         GEOMETRY_PARAMS = {'Lx', 'Ly', 'Lz', 'Aspect'}
 
-        # Handle Geometry / Domain Parameters
+        # Geometry / Domain Parameters (Requires Rebuilding Domain & Problem)
         if name in GEOMETRY_PARAMS:
             bounds_list = list(self.bounds)
 
@@ -88,27 +88,32 @@ class FluidModel:
             self.create_domain()
             self.build_fields()
 
-        # Handle Physical Parameters (in self.params)
+            # Clear references and force full rebuild for domain changes only
+            self.ivp_problem = None
+            gc.collect()
+            MPI.COMM_WORLD.Barrier()
+            
+            self.build_problems()
+            logger.info(f"Geometry parameter '{name}' updated to {value}. Full domain & problem rebuilt.")
+
+        # Dynamic Physical Parameters (Updated IN-PLACE without rebuilding!)
         elif name in self.params:
             self.params[name] = value
             setattr(self, name, value)  # Update attribute so Dedalus equations see it
+            # update parameter inside IVP problem directly
+            attr_name = f"{name}_param"
+            if hasattr(self, attr_name):
+                param_field = getattr(self, attr_name)
+                param_field['g'] = value
+                logger.info(f"Parameter '{name}' updated to {value}")
+            else:
+                logger.info(f"Parameter '{name}' doesn't exist inside model!")
 
         # Fallback for other existing instance attributes
         elif hasattr(self, name):
             setattr(self, name, value)
-
         else:
             raise KeyError(f"Parameter '{name}' is unknown (not in self.params or model attributes).")
-
-        # Clear old problem references
-        self.ivp_problem = None
-        # Force Python to run garbage collection and release MPI communicators
-        gc.collect()
-        MPI.COMM_WORLD.Barrier()
-        # Now rebuild the problem safely
-        # Rebuild Dedalus problems with updated values/operators
-        self.build_problems()
-        logger.info(f"Parameter '{name}' updated to {value}. Dedalus problems rebuilt.")
     
     def get_grid_shape(self):
         """
