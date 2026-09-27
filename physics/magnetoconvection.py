@@ -201,17 +201,17 @@ class BoundedQuasiStaticMagnetoConvection(MagnetoConvection):
         Q = self.params['Q']
         Pr = self.params['Pr']
         Ra = self.params['Ra']
-        if self.params.get('scale_Ra_c', False):
-            Rac = critical_Ra(Q)
-            Ra = Ra*Rac
+        Rac = critical_Ra(Q) if self.params.get('scale_Ra_c', False) else 1.0
 
         # PARAMETERS / BACKGROUND FIELDS (The Knowns)
         self.Ra_param = self.dist.Field(name='Ra_param'); self.Ra_param['g'] = Ra
+        self.Rac_param = self.dist.Field(name='Rac_param'); self.Rac_param['g'] = Rac
         self.Pr_param = self.dist.Field(name='Pr_param'); self.Pr_param['g'] = Pr
         self.Q_param = self.dist.Field(name='Q_param'); self.Q_param['g'] = Q
 
         ns = {'np': np,
-              'Ra': self.Ra_param, 'Pr': self.Pr_param, 'Q': self.Q_param,
+              'Ra': self.Ra_param, 'Rac': self.Rac_param, 
+              'Pr': self.Pr_param, 'Q': self.Q_param,
               'ex': ex, 'ey': ey, 'ez': ez,
               'ux': self.u @ ex, 'w': self.u @ ez,
               'grad_u': grad_u, 'grad_te': grad_te,
@@ -230,8 +230,8 @@ class BoundedQuasiStaticMagnetoConvection(MagnetoConvection):
         
         self.ivp_problem = de.IVP(vars, namespace=ns)
         # Governing Equations
-        self.ivp_problem.add_equation("dt(u) + grad(p) - Q*np.sqrt(Pr/Ra)*Lorentz_force - te*ez - np.sqrt(Pr/Ra)*lap_u + lift(tau_u2) = - u@grad_u")
-        self.ivp_problem.add_equation("dt(te) - (1.0/np.sqrt(Pr*Ra))*lap_te - w + lift(tau_te2) = - u@grad_te")
+        self.ivp_problem.add_equation("dt(u) + grad(p) - Q*np.sqrt(Pr/(Ra*Rac))*Lorentz_force - te*ez - np.sqrt(Pr/(Ra*Rac))*lap_u + lift(tau_u2) = - u@grad_u")
+        self.ivp_problem.add_equation("dt(te) - (1.0/np.sqrt(Pr*(Ra*Rac)))*lap_te - w + lift(tau_te2) = - u@grad_te")
         self.ivp_problem.add_equation("trace(grad_u) + tau_p = 0")
         self.ivp_problem.add_equation("integ(p) = 0") 
 
