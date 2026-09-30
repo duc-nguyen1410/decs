@@ -271,18 +271,30 @@ class ECSSolver:
                     # Write header if file is new
                     header_line = ""
                     if self.Tsearch: header_line += f"Tp, "
-                    if self.Rxsearch: header_line += f"ax, "
-                    if self.Rysearch: header_line += f"ay, "
-                    if self.Rzsearch: header_line += f"az, "
+                    if self.Rxsearch: 
+                        header_line += f"ax, "
+                        if not self.Tsearch: header_line += f"cx, "
+                    if self.Rysearch: 
+                        header_line += f"ay, "
+                        if not self.Tsearch: header_line += f"cy, "
+                    if self.Rzsearch: 
+                        header_line += f"az, "
+                        if not self.Tsearch: header_line += f"cz, "
                     header_line += ", ".join(keys)
                     header.write(header_line + "\n")
             with open(file_path, mode='a') as f:
                 # Append data
                 values = []
                 if self.Tsearch: values += [f"{Tp_curr:.12f}"]
-                if self.Rxsearch: values += [f"{ax_curr:.12f}"]
-                if self.Rysearch: values += [f"{ay_curr:.12f}"]
-                if self.Rzsearch: values += [f"{az_curr:.12f}"]
+                if self.Rxsearch: 
+                    values += [f"{ax_curr:.12f}"]
+                    if not self.Tsearch: values += [f"{ax_curr*Tp_curr*self.model.bounds[0]:.12f}"]
+                if self.Rysearch: 
+                    values += [f"{ay_curr:.12f}"]
+                    if not self.Tsearch: values += [f"{ay_curr*Tp_curr*self.model.bounds[1]:.12f}"]
+                if self.Rzsearch: 
+                    values += [f"{az_curr:.12f}"]
+                    if not self.Tsearch: values += [f"{az_curr*Tp_curr*self.model.bounds[-1]:.12f}"]
                 values += [f"{float(properties[k]):.12f}" for k in keys]
                 f.write(", ".join(values) + "\n")
             
@@ -534,9 +546,15 @@ class ECSSolver:
         flow_properties = self.model.get_flow_properties() or {}
         sol_properties = {}
         if self.Tsearch: sol_properties.update({'Tp': Tp_curr})
-        if self.Rxsearch: sol_properties.update({'ax': ax_curr})
-        if self.Rysearch: sol_properties.update({'ay': ay_curr})
-        if self.Rzsearch: sol_properties.update({'az': az_curr})
+        if self.Rxsearch: 
+            sol_properties.update({'ax': ax_curr})
+            if not self.Tsearch: sol_properties.update({'cx': ax_curr*Tp_curr*self.model.bounds[0]})
+        if self.Rysearch: 
+            sol_properties.update({'ay': ay_curr})
+            if not self.Tsearch: sol_properties.update({'cy': ay_curr*Tp_curr*self.model.bounds[1]})
+        if self.Rzsearch: 
+            sol_properties.update({'az': az_curr})
+            if not self.Tsearch: sol_properties.update({'cz': az_curr*Tp_curr*self.model.bounds[-1]})
         properties = {**sol_properties, **flow_properties}
         return xi, success, norm_b, np.linalg.norm(x0_curr), properties
     
