@@ -120,9 +120,9 @@ class MagnetoConvection(FluidModel):
             self.fields = [self.u, self.te] # for ECS
             self.eq_fields = [self.u_eq, self.te_eq] # for EVP
     
-    def preview(self):
+    def preview(self, field_idx=-1):
         """ Preview the current state using last field of the system. """
-        data_g = self.fields[-1].allgather_data('g').real
+        data_g = self.fields[field_idx].allgather_data('g').real
         if self.dist.comm.rank == 0:
             xaxis = self.bases[0].global_grid(self.dist, scale=self.dealias)
             zaxis = self.bases[-1].global_grid(self.dist, scale=self.dealias)
