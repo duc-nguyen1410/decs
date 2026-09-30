@@ -44,34 +44,34 @@ class DoubleDiffusion(FluidModel):
         # Horizontal x-basis (Always periodic)
         self.x_basis = None
         if self.mode=='sim':
-            x_basis = de.RealFourier(self.coords['x'], size=Nx, bounds=(0, Lx), dealias=self.dealias)
+            self.x_basis = de.RealFourier(self.coords['x'], size=Nx, bounds=(0, Lx), dealias=self.dealias)
         else:
-            x_basis = de.ComplexFourier(self.coords['x'], size=Nx, bounds=(0, Lx), dealias=self.dealias)
+            self.x_basis = de.ComplexFourier(self.coords['x'], size=Nx, bounds=(0, Lx), dealias=self.dealias)
         
         # Only if 3D, Always periodic
         if self.dim == 3:
             self.y_basis = None
             if self.mode=='sim':
-                y_basis = de.RealFourier(self.coords['y'], size=Ny, bounds=(0, Ly), dealias=self.dealias)
+                self.y_basis = de.RealFourier(self.coords['y'], size=Ny, bounds=(0, Ly), dealias=self.dealias)
             else:
-                y_basis = de.ComplexFourier(self.coords['y'], size=Ny, bounds=(0, Ly), dealias=self.dealias)
+                self.y_basis = de.ComplexFourier(self.coords['y'], size=Ny, bounds=(0, Ly), dealias=self.dealias)
 
         self.z_basis = None
         if self.bounded:
             # Use Chebyshev for bounded domains
-            z_basis = de.ChebyshevT(self.coords['z'], size=Nz, bounds=(0, Lz), dealias=self.dealias)
+            self.z_basis = de.ChebyshevT(self.coords['z'], size=Nz, bounds=(0, Lz), dealias=self.dealias)
         else:
             # Use Fourier for fully periodic domains
             if self.mode=='sim':
-                z_basis = de.RealFourier(self.coords['z'], size=Nz, bounds=(0, Lz), dealias=self.dealias)
+                self.z_basis = de.RealFourier(self.coords['z'], size=Nz, bounds=(0, Lz), dealias=self.dealias)
             else:
-                z_basis = de.ComplexFourier(self.coords['z'], size=Nz, bounds=(0, Lz), dealias=self.dealias)
+                self.z_basis = de.ComplexFourier(self.coords['z'], size=Nz, bounds=(0, Lz), dealias=self.dealias)
 
         self.bases = None
         if self.dim == 2:
-            self.bases = (x_basis, z_basis)
+            self.bases = (self.x_basis, self.z_basis)
         else:
-            self.bases = (x_basis, y_basis, z_basis)
+            self.bases = (self.x_basis, self.y_basis, self.z_basis)
 
     def build_fields(self):
         # pressure p (scalar)
