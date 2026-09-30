@@ -259,9 +259,9 @@ class ECSSolver:
         return xi_pert + xk, min_error, tr_local
     
     def save_flow_properties(self, xi, filename="flow_properties.csv"):
-        properties = self.model.get_flow_properties()
         x0_curr, Tp_curr, ax_curr, ay_curr, az_curr = self.unpack_xi(xi)
-        # logger.info(f"||x||: {np.linalg.norm(debug_x)}")
+        self.model.set_state(x0_curr)
+        properties = self.model.get_flow_properties()
         if self.model.dist.comm.rank == 0:
             file_path = os.path.join(self.odir, filename)
             file_exists = os.path.isfile(file_path)
