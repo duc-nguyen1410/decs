@@ -757,6 +757,9 @@ class ShearedDiffusiveConvection_Radko2016(DoubleDiffusion):
         self.Pr_param = self.dist.Field(name='Pr_param'); self.Pr_param['g'] = self.params['Pr']
         self.Lambda_param = self.dist.Field(name='Lambda_param'); self.Lambda_param['g'] = self.params['Lambda']
         self.tau_param = self.dist.Field(name='tau_param'); self.tau_param['g'] = self.params['tau']
+        
+        if self.params.get('infinite-Pr', False):
+            self.Ra_param = self.dist.Field(name='Ra_param'); self.Ra_param['g'] = (4*(np.pi**2)*self.params['Ri']*self.params['Pe']**2)/(self.params['Pr']*(self.params['Lambda']-1))
 
         baru = self.dist.Field(bases=self.bases[-1]); baru['g'] = np.sin(2*np.pi*z)
 
@@ -772,15 +775,23 @@ class ShearedDiffusiveConvection_Radko2016(DoubleDiffusion):
         vars = [self.p, self.u, self.te, self.sa, 
                 tau_p, tau_u, tau_te, tau_sa]
         self.ivp_problem = de.IVP(vars, namespace=ns)
+        if self.params.get('infinite-Pr', False):
+            ns.update({'Ra': self.Ra_param})
 
         # Governing Equations
         self.ivp_problem.add_equation("trace(grad_u) + tau_p = 0")
         self.ivp_problem.add_equation("integ(p) = 0") 
         if self.params.get('stokes', False):
             self.ivp_problem.add_equation("grad(p) - Pr/Pe*lap_u - (4*(np.pi**2)*Ri)/(Lambda-1)*(te-sa)*ez + tau_u = 0")
+        elif self.params.get('infinite-Pr', False):
+            self.ivp_problem.add_equation("grad(p) - 1.0/Pe*lap_u - Ra/(Pe**2)*(te-sa)*ez + tau_u = 0")
         else:
             self.ivp_problem.add_equation("dt(u) + baru*dx(u) + w*dz(baru)*ex + grad(p) - Pr/Pe*lap_u - (4*(np.pi**2)*Ri)/(Lambda-1)*(te-sa)*ez + tau_u = - u@grad(u)")
-        self.ivp_problem.add_equation("dt(te) + baru*dx(te) - (1.0/Pe)*lap_te - w + tau_te = - u@grad(te)")
+        
+        if self.params.get('zero-temp-feedback', False):
+            self.ivp_problem.add_equation("dt(te) - (1.0/Pe)*lap_te - w + tau_te = 0")
+        else: 
+            self.ivp_problem.add_equation("dt(te) + baru*dx(te) - (1.0/Pe)*lap_te - w + tau_te = - u@grad(te)")
         self.ivp_problem.add_equation("dt(sa) + baru*dx(sa) - (tau/Pe)*lap_sa - Lambda*w + tau_sa = - u@grad(sa)")
         self.ivp_problem.add_equation("integ(u) = 0") 
         self.ivp_problem.add_equation("integ(te) = 0") 
