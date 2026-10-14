@@ -241,7 +241,7 @@ class ECSSolver:
             
             min_error = rho
             xk = np.matmul(Q[:,0:k], res.x)
-            logger.info(f"GMRES iteration {k}, residual norm: {rho}")
+            logger.info(f"GMRES iteration {k}, residual norm: {rho:.5e}")
             best_k = k
             if self.krylov_dim_min <= k and rho < self.gmres_min_error:
                 break
@@ -481,9 +481,9 @@ class ECSSolver:
             if self.Rzsearch: param_str += f", az: {az_curr}"
 
             if i==0:
-                logger.info(f"Initialization, Residual norm: {norm_b}{param_str}")
+                logger.info(f"Initialization, Residual norm: {norm_b:.5e}{param_str}")
                 if self.model.dist.comm.rank == 0:
-                    log_file.writelines(f"Initialization, Residual norm: {norm_b}{param_str}\n")
+                    log_file.writelines(f"Initialization, Residual norm: {norm_b:.5e}{param_str}\n")
             if norm_b < self.tol:
                 logger.info("Convergence achieved!")
                 if self.model.dist.comm.rank == 0:
@@ -522,7 +522,7 @@ class ECSSolver:
             if self.Rzsearch: param_str += f", az: {az_curr}"
             logger.info(f"Iteration {i}, ||x||: {np.linalg.norm(x0_curr)}, Residual: {norm_b}, GMRES error: {error}, trust radius: {tr}{param_str}")
             if self.model.dist.comm.rank == 0:
-                log_file.writelines(f"Iteration {i}, Residual norm: {norm_b}, ||x||: {np.linalg.norm(x0_curr)}, GMRES error: {error}, trust radius: {tr}{param_str}\n")
+                log_file.writelines(f"Iteration {i}, Residual norm: {norm_b:.5e}, ||x||: {np.linalg.norm(x0_curr)}, GMRES error: {error}, trust radius: {tr}{param_str}\n")
 
             # Save individual parameter files
             if self.Tsearch:

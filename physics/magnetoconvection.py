@@ -101,15 +101,15 @@ class MagnetoConvection(FluidModel):
         self.p = self.dist.Field(name='p', bases=self.bases)
         # velocity u (Vector)
         self.u = self.dist.VectorField(self.coords, name='u', bases=self.bases)
-        self.u.change_scales(self.dealias)
+        # self.u.change_scales(self.dealias)
         self.u_eq = self.dist.VectorField(self.coords, name='u_eq', bases=self.bases)
         # temperature \theta (scalar)
         self.te = self.dist.Field(name='te', bases=self.bases)
-        self.te.change_scales(self.dealias)
+        # self.te.change_scales(self.dealias)
         self.te_eq = self.dist.Field(name='te_eq', bases=self.bases)
         # electric potential \Phi (scalar)
         self.Phi = self.dist.Field(name='Phi', bases=self.bases)
-        self.Phi.change_scales(self.dealias)
+        # self.Phi.change_scales(self.dealias)
         self.Phi_eq = self.dist.Field(name='Phi_eq', bases=self.bases)
 
         # Newton solver now sees [u, Phi, te], save 'te' as last element for preview if needed

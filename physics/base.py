@@ -115,18 +115,18 @@ class FluidModel:
         else:
             raise KeyError(f"Parameter '{name}' is unknown (not in self.params or model attributes).")
     
-    def get_grid_shape(self):
+    def get_grid_shape(self, dealias=False):
         """
         Returns (Nx, Nz) or (Nx, Ny, Nz) scaled by dealias of current domain
         """
-        return tuple(basis.global_grid(self.dist, scale=self.dealias).shape[i] 
+        return tuple(basis.global_grid(self.dist, scale=self.dealias if dealias else 1).shape[i] 
                  for i, basis in enumerate(self.bases))
     
-    def size(self):
+    def size(self, dealias=False):
         """
         Return total freedom elements on dealias-scaled grid data of all fields 
         """
-        grid_shape = self.get_grid_shape()
+        grid_shape = self.get_grid_shape(dealias=dealias)
         points_per_field = np.prod(grid_shape) # np.prod(grid_shape) gives Nx*Nz or Nx*Ny*Nz
         total_size = 0
         for field in self.fields:
@@ -136,13 +136,14 @@ class FluidModel:
             total_size += num_components * points_per_field
         return total_size
     
-    def get_state(self):
+    def get_state(self, dealias=False):
         """
         Return a vector of current state collected from all fields
         """
         data_slices = []
         for field in self.fields:
             # Gather from MPI processes and flatten
+            if not dealias: field.change_scales(1.0)
             gdata = field.allgather_data('g').real
             data_slices.append(gdata.ravel())
         return np.concatenate(data_slices)
@@ -189,7 +190,7 @@ class FluidModel:
             field.load_from_global_grid_data(data)
             cursor += size
 
-    def save_state(self, filename):
+    def save_state(self, filename, dealias=False):
         """
         Save dealias-scaled grid data to a file
         """
@@ -205,6 +206,7 @@ class FluidModel:
 
         gathered_data = {}
         for field in self.fields:
+            if not dealias: field.change_scales(1.0)
             # Use the field name as the HDF5 dataset name
             gathered_data[field.name] = field.allgather_data('g').real # shape [dim][nx][ny][nz]
 
@@ -226,7 +228,7 @@ class FluidModel:
                     
                     # Save grid info for easy plotting later
                     # This handles (xg, zg) or (xg, yg, zg)
-                    coords = [basis.global_grid(self.dist, scale=self.dealias) 
+                    coords = [basis.global_grid(self.dist, scale=self.dealias if dealias else 1) 
                             for basis in self.bases]
                     coord_names = [basis.coord.name for basis in self.bases]
 
@@ -245,7 +247,7 @@ class FluidModel:
                 
                 with nc.Dataset(filename, mode='w', format='NETCDF4') as ds:
                     ds.dim_attr = self.dim
-                    coords = [basis.global_grid(self.dist, scale=self.dealias) for basis in self.bases]
+                    coords = [basis.global_grid(self.dist, scale=self.dealias if dealias else 1) for basis in self.bases]
                     coord_names = [basis.coord.name for basis in self.bases]
                     # Reverse for C-order / NetCDF / ParaView standard [z, y, x]
                     coords = tuple(reversed(coords))
