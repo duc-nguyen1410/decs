@@ -478,15 +478,29 @@ class FluidModel:
         self.set_state(x)
         data_slices = []
         for field in self.fields:
-            gdata = de.Differentiate(field, self.coords['x']).evaluate().allgather_data('g').real
+            x_der = de.Differentiate(field, self.coords['x']).evaluate()
+            x_der.change_scales(1.0)
+            gdata = x_der.allgather_data('g').real
             data_slices.append(gdata.ravel())
         return np.concatenate(data_slices)
+    def y_derivative(self, x):
+            # Return dF/dx
+            self.set_state(x)
+            data_slices = []
+            for field in self.fields:
+                y_der = de.Differentiate(field, self.coords['y']).evaluate()
+                y_der.change_scales(1.0)
+                gdata = y_der.allgather_data('g').real
+                data_slices.append(gdata.ravel())
+            return np.concatenate(data_slices)
     def z_derivative(self, x):
         # Return dF/dz
         self.set_state(x)
         data_slices = []
         for field in self.fields:
-            gdata = de.Differentiate(field, self.coords['z']).evaluate().allgather_data('g').real
+            z_der = de.Differentiate(field, self.coords['z']).evaluate()
+            z_der.change_scales(1.0)
+            gdata = z_der.allgather_data('g').real
             data_slices.append(gdata.ravel())
         return np.concatenate(data_slices)
     
