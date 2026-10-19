@@ -7,13 +7,13 @@ In DECS, we separately developed Python classes, including physical models `phys
 <table>
     <tr>
         <td align="center"><b>Equilibrium</b></td>
-        <td align="center"><b>Simulation 1</b></td>
-        <td align="center"><b>Simulation 2</b></td>
-        <td align="center"><b>Simulation 3</b></td>
+        <td align="center"><b>Traveling wave</b></td>
+        <td align="center"><b>Periodic orbit</b></td>
+        <td align="center"><b>Relative periodic orbit</b></td>
     </tr>
     <tr>
         <td><img src="examples/Lx0.6_WF/WF_Lx0.6.png" width="200"/></td>
-        <td><img src="https://github.com/duc-nguyen1410/decs/blob/main/Lx0.6_TM1/S1.mp4" width="200"/></td>
+        <td><img src="https://github.com/user-attachments/assets/92e53902-3798-4a5a-8f6c-b1ebcb3ee93b" width="200"/></td>
         <td><img src="examples/Lx0.8_PO3/S2.mp4" width="200"/></td>
         <td><img src="examples/Lx0.8_RPO2/S3.mp4" width="200"/></td>
     </tr>
