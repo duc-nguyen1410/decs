@@ -2,9 +2,10 @@
 
 A **Dedalus**-based Solver finding **E**xact **C**oherent **S**tructures in Fluid Dynamics.
 
-In DECS, we separately developed Python classes, including physical models `physics/` in fluid dynamics using [Dedalus](https://dedalus-project.org/), a solver finding ECS `ecs_core/` (equilibria, traveling wave, (relative) periodic orbits) as shown by examples bellow, and a continuation feature `continuation/`.
+In DECS, we separately developed Python classes, including physical models `physics/` in fluid dynamics using [Dedalus](https://dedalus-project.org/), a solver finding ECS `ecs_core/` (equilibria, traveling wave, (relative) periodic orbits), and a continuation feature `continuation/`. For example, we have identified the following solutions in salt-finger convection:
 
-<table>
+<div align="center">
+<table border="0" >
     <tr>
         <td align="center"><b>Equilibrium</b></td>
         <td align="center"><b>Traveling wave</b></td>
@@ -24,6 +25,7 @@ In DECS, we separately developed Python classes, including physical models `phys
         <td align="center"><a href="examples/Lx0.8_RPO2/S3.mp4">Watch video</a></td>
   </tr>
 </table>
+</div>
 
 Please read instructions for [conducting simulation](docs/simulation.md) of [available models](docs/models.md), [finding ECS](docs/find_ecs.md), and [parametric continuation](docs/continuation.md). Also, you can build [new equations](docs/build_equations.md) by yourself if needed.
 
