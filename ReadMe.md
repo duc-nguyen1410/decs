@@ -12,11 +12,17 @@ In DECS, we separately developed Python classes, including physical models `phys
         <td align="center"><b>Relative periodic orbit</b></td>
     </tr>
     <tr>
-        <td><img src="examples/Lx0.6_WF/WF_Lx0.6.png" width="200"/></td>
-        <td><img src="examples/Lx0.6_TM1/TM1.png" width="200"/></td>
-        <td><img src="examples/Lx0.8_PO3/PO3.png" width="200"/></td>
-        <td><img src="examples/Lx0.8_RPO2/RPO2.png" width="200"/></td>
+        <td><img src="examples/Lx0.6_WF/WF_Lx0.6.png" height="200"/></td>
+        <td><img src="examples/Lx0.6_TM1/TM1.png" height="200"/></td>
+        <td><img src="examples/Lx0.8_PO3/PO3.png" height="200"/></td>
+        <td><img src="examples/Lx0.8_RPO2/RPO2.png" height="200"/></td>
     </tr>
+    <tr>
+        <td align="center">-</td>
+        <td align="center"><a href="examples/Lx0.6_TM1/S1.mp4">Watch video</a></td>
+        <td align="center"><a href="examples/Lx0.8_PO3/S2.mp4">Watch video</a></td>
+        <td align="center"><a href="examples/Lx0.8_RPO2/S3.mp4">Watch video</a></td>
+  </tr>
 </table>
 
 Please read instructions for [conducting simulation](docs/simulation.md) of [available models](docs/models.md), [finding ECS](docs/find_ecs.md), and [parametric continuation](docs/continuation.md). Also, you can build [new equations](docs/build_equations.md) by yourself if needed.
