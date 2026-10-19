@@ -13,9 +13,9 @@ In DECS, we separately developed Python classes, including physical models `phys
     </tr>
     <tr>
         <td><img src="examples/Lx0.6_WF/WF_Lx0.6.png" width="200"/></td>
-        <td><img src="https://github.com/user-attachments/assets/92e53902-3798-4a5a-8f6c-b1ebcb3ee93b" width="200"/></td>
-        <td><img src="examples/Lx0.8_PO3/S2.mp4" width="200"/></td>
-        <td><img src="examples/Lx0.8_RPO2/S3.mp4" width="200"/></td>
+        <td><img src="examples/Lx0.6_TM1/TM1.png" width="200"/></td>
+        <td><img src="examples/Lx0.8_PO3/PO3.png" width="200"/></td>
+        <td><img src="examples/Lx0.8_RPO2/RPO2.png" width="200"/></td>
     </tr>
 </table>
 
