@@ -128,6 +128,13 @@ class ECSSolver:
             if norm_x > 1e-12:
                 neutral_basis.append(dudx / norm_x)
 
+            # Spatial y-derivative
+            if self.model.dim == 3:
+                dudy = self.model.y_derivative(x_base)
+                norm_y = np.linalg.norm(dudy)
+                if norm_x > 1e-12:
+                    neutral_basis.append(dudy / norm_y)
+
             # Spatial z-derivative
             if not self.model.bounded:
                 dudz = self.model.z_derivative(x_base)
