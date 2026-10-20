@@ -32,7 +32,7 @@ For example, some solutions identified in salt-finger convection include:
 </table>
 </div>
 
-Please read examples for conducting [simulation](examples/simulate.py) of [salt-finger convection](docs/models.py), finding [equilibrium](examples/find_eq.py), [traveling wave](examples/find_tw.py), [periodic orbit](examples/find_po.py) and [relative periodic orbit](examples/find_rpo.py); and doing [parameter continuation](examples/continuation.py) of ECS. Also, you can build [new problems](docs/new_problem.md) by yourself if needed.
+Please read examples for conducting [simulation](examples/simulate.py) of [salt-finger convection](docs/models.md), finding [equilibrium](examples/find_eq.py), [traveling wave](examples/find_tw.py), [periodic orbit](examples/find_po.py) and [relative periodic orbit](examples/find_rpo.py); and doing [parameter continuation](examples/continuation.py) of ECS. Also, you can build [new problems](docs/new_problem.md) by yourself if needed.
 
 <!-- Please cite as :  -->
 
