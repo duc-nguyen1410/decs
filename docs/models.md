@@ -22,7 +22,7 @@ $$
 with dimensionless parameters
 
 $$
-Ra=\frac{g\beta_T \Delta T^* H^{3}}{\kappa_T\nu}, \quad Pr=\frac{\nu}{\kappa_T}, \quad \tau=\frac{\kappa_S}{\kappa_T}, \quad R_\rho=\frac{\beta_T\Delta T^*}{\beta_S\Delta S^*}
+Ra=\frac{g\beta_T \Delta T^{*} H^{3}}{\kappa_T\nu}, \quad Pr=\frac{\nu}{\kappa_T}, \quad \tau=\frac{\kappa_S}{\kappa_T}, \quad R_\rho=\frac{\beta_T\Delta T^{*}}{\beta_S\Delta S^{*}}
 $$
 
 and constraints for homogeneous mode:
