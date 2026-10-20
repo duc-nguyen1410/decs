@@ -1,4 +1,4 @@
-# DECS (Dedelus-ECS): 
+# DECS (Dedalus-ECS)
 
 A **Dedalus**-based Solver finding **E**xact **C**oherent **S**tructures in Fluid Dynamics.
 
@@ -27,7 +27,7 @@ In DECS, we separately developed Python classes, including physical models `phys
 </table>
 </div>
 
-Please read instructions for [conducting simulation](docs/simulation.md) of [available models](docs/models.md), [finding ECS](docs/find_ecs.md), and [parametric continuation](docs/continuation.md). Also, you can build [new equations](docs/build_equations.md) by yourself if needed.
+Please read examples for conducting [simulation](examples/simulate.py) of [salt-finger convection](docs/models.py), finding [equilibrium](examples/find_eq.py), [traveling wave](examples/find_tw.py), [periodic orbit](examples/find_po.py) and [relative peiodic orbit](examples/find_rpo.py); and doing [parameter continuation](examples/continuation.py) of ECS. Also, you can build [new problems](docs/new_problem.md) by yourself if needed.
 
 <!-- Please cite as :  -->
 
