@@ -1,4 +1,4 @@
-Currently, we have created two models: 
+Currently, we have created a model: 
 
 # Double-diffusive convection
 Double-diffusive convection (DDC) requires velocity ($\boldsymbol{U}$), temperature ($T$), salinity ($S$), and pressure ($p$). We decompose the velocity, temperature, and salinity into a base state ($\boldsymbol{U}_b, T_b, S_b$) and fluctuations ($\boldsymbol{u}, \theta, s$). Fluctuations will be used as main computing variables in simulation, their visualizations, and in [ECS solver](find_ecs.md). The base state depends on the following specific problems. 
@@ -12,24 +12,24 @@ Nondimensional governing equations in terms of fluctuation using thermal diffusi
 
 $$
 \begin{align}
-    \nabla\cdot \boldsymbol{u} = 0,\\
-    \partial_t \boldsymbol{u}+\boldsymbol{u}\cdot\nabla\boldsymbol{u} = -\nabla p + Pr\nabla^{2}\boldsymbol{u} + PrRa\left(\theta-R_\rho^{-1} s\right)\mathbf{e}_z,\\
-    \partial_t \theta +\boldsymbol{u}\cdot\nabla \theta +w = \nabla^{2} \theta,\\
-    \partial_t s +\boldsymbol{u}\cdot\nabla s +w = \tau\nabla^{2} s
+    \nabla\cdot \boldsymbol{u} &= 0,\\
+    \partial_t \boldsymbol{u}+\boldsymbol{u}\cdot\nabla\boldsymbol{u} &= -\nabla p + Pr\nabla^{2}\boldsymbol{u} + PrRa\left(\theta-R_\rho^{-1} s\right)\mathbf{e}_z,\\
+    \partial_t \theta +\boldsymbol{u}\cdot\nabla \theta +w &= \nabla^{2} \theta,\\
+    \partial_t s +\boldsymbol{u}\cdot\nabla s +w &= \tau\nabla^{2} s
 \end{align}
 $$
 
 with dimensionless parameters
 
 $$
-Ra=\frac{g\beta_T \Delta T^{*} H^{3}}{\kappa_T\nu}, \quad Pr=\frac{\nu}{\kappa_T}, \quad \tau=\frac{\kappa_S}{\kappa_T}, \quad R_\rho=\frac{\beta_T\Delta T^{*}}{\beta_S\Delta S^{*}}
+Ra=\frac{g\beta_T \Delta T^* H^{3}}{\kappa_T\nu}, \quad Pr=\frac{\nu}{\kappa_T}, \quad \tau=\frac{\kappa_S}{\kappa_T}, \quad R_\rho=\frac{\beta_T\Delta T^*}{\beta_S\Delta S^*}
 $$
 
 and constraints for homogeneous mode:
 
 $$\int\int\int \boldsymbol{u} = \int\int\int \theta = \int\int\int s = 0$$
 
-
+<!-- 
 ## Diffusive convection `DiffusiveConvection`
 This is unbounded diffusive convection `bounded=False`. Base state is:
 
@@ -120,11 +120,11 @@ Ra=\frac{g\beta_T \Delta T^{*} H^{3}}{\kappa_T\nu}, \quad Pr=\frac{\nu}{\kappa_T
 $$
 
 Boundary condition:
-<!-- - No-slip (standard, `'stress-free'=False` in `params`) at bottom and top walls:
-$$\boldsymbol{u}=\theta=0, \quad \partial_z \Phi = 0$$ -->
+- No-slip (standard, `'stress-free'=False` in `params`) at bottom and top walls:
+$$\boldsymbol{u}=\theta=0, \quad \partial_z \Phi = 0$$
 
 - Stress-free (optional, `'stress-free'=True` in `params`)  at bottom and top sides:
 
 $$w=\theta=0, \quad \partial_z(u,v) = 0, \quad \partial_z \Phi = 0$$
 
-In 2D case, $\Phi$ will be removed.
+In 2D case, $\Phi$ will be removed. -->
