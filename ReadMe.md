@@ -5,7 +5,7 @@ A **Dedalus**-based solver finding **E**xact **C**oherent **S**tructures in Flui
 In DECS, we separately developed Python classes, including physical models `physics/` in fluid dynamics using [Dedalus](https://dedalus-project.org/), a solver finding ECS `ecs_core/` (equilibria, traveling wave, (relative) periodic orbits), and a continuation feature `continuation/`. 
 
 This code was used for the paper: 
-- Van Duc Nguyen, Chang Liu (2026) "Exact Coherent Structures of Salt-Finger Convection: Layering and Shear Formation." (In preparation for submission to Physical Review Letters).
+- Van Duc Nguyen, Chang Liu (2026) "Exact Coherent Structures of Salt-Finger Convection: Layering and Shear Generation." (In preparation for submission to Physical Review Letters).
 
 For example, some solutions identified in salt-finger convection include:
 
