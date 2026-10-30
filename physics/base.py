@@ -190,10 +190,12 @@ class FluidModel:
             field.load_from_global_grid_data(data)
             cursor += size
 
-    def save_state(self, filename, dealias=False):
+    def save_state(self, filename, state_vector=None, dealias=False):
         """
         Save dealias-scaled grid data to a file
         """
+        if state_vector is not None:
+            self.set_state(state_vector)
         import os
         import h5py
         filename = filename + self.ext

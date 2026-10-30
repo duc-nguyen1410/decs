@@ -355,20 +355,18 @@ class ECSSolver:
                 # save residual
                 scipy.io.mmwrite(self.odir+'stability/residual.mtx', [res])
             
-            coords = [basis.global_grid(self.model.dist, scale=self.model.dealias) for basis in self.model.bases]
-            coord_names = [basis.coord.name for basis in self.model.bases]
-            unstable = np.where(growthrate.real > 0)[0]
-            if self.model.dist.comm.rank == 0 and unstable.size > 0:
-                eigenvectors_unstable = eigenvectors[:, unstable]
-                eigenvalues_unstable = eigenvalues[unstable]
-                growthrate_unstable = growthrate[unstable]
-                h5f = h5py.File(self.odir+'stability/eigen_unstable.h5', 'w') 
-                h5f.create_dataset('/eigenvectors', data = eigenvectors_unstable) 
-                h5f.create_dataset('/eigenvalues', data = eigenvalues_unstable) 
-                h5f.create_dataset('/growthrate', data = growthrate_unstable) 
-                for c_name, g_data in zip(coord_names, coords):
-                    h5f.create_dataset(f'/{c_name}', data = g_data) 
-                h5f.close()
+            unstable = np.where(growthrate.real > 0.0)[0]
+            if unstable.size > 0:
+                logger.info(f"There are {unstable.size} unstable modes.")
+                # Save eigenvectors exist on rank 0 — broadcast to all ranks
+                eigenvectors_unstable = self.model.dist.comm.bcast(
+                    eigenvectors[:, unstable] if self.model.dist.comm.rank == 0 else None, 
+                    root=0
+                )
+                for mode_idx, unstable_eigenvec in enumerate(eigenvectors_unstable.T):
+                    self.model.save_state(filename = self.odir+ f'stability/unstable_mode_{mode_idx}',
+                                            state_vector = unstable_eigenvec)
+                
             if original_symmetry.is_nontrivial():
                 self.sigma = original_symmetry
             logger.info('Done!')
