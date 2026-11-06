@@ -39,19 +39,19 @@ class FluidModel:
         self.evp_problem = None
         
         # CFL function
-        self.use_CFL = False
+        self.use_CFL = (params or {}).get('use_CFL', False)
         self.CFL = None
-        self.CFL_cadence = params.get('cadence', 10)
-        self.CFL_safety = params.get('safety', 0.5)
-        self.CFL_threshold = params.get('threshold', 0.05)
-        self.CFL_min_change = params.get('min_change', 0.5)
-        self.CFL_max_change = params.get('max_change', 1.5)
-        self.CFL_max_dt = params.get('max_dt', 0.1)
+        self.CFL_cadence = (params or {}).get('cadence', 10)
+        self.CFL_safety = (params or {}).get('safety', 0.5)
+        self.CFL_threshold = (params or {}).get('threshold', 0.05)
+        self.CFL_min_change = (params or {}).get('min_change', 0.5)
+        self.CFL_max_change = (params or {}).get('max_change', 1.5)
+        self.CFL_max_dt = (params or {}).get('max_dt', 0.1)
 
         # Output options
-        self.save_snapshots = False
-        self.save_flowproperties = True
-        self.save_meanprofiles = False
+        self.save_snapshots = (params or {}).get('save_snapshots', False)
+        self.save_flowproperties = (params or {}).get('save_flowproperties', False)
+        self.save_meanprofiles = (params or {}).get('save_meanprofiles', False)
 
         # Preview current state
         self.preview_fig = None
@@ -417,7 +417,7 @@ class FluidModel:
                     dt = Tp - solver.sim_time
                 solver.step(dt)
         else:
-            num_steps = int(Tp/self.init_dt)
+            num_steps = max(1, int(Tp/self.init_dt))
             dt = Tp/num_steps
             for i in range(num_steps):
                 solver.step(dt)
@@ -461,7 +461,7 @@ class FluidModel:
                     dt = sim_time - solver.sim_time
                 solver.step(dt)
         else:
-            num_steps = int(sim_time/self.init_dt)
+            num_steps = max(1, int(sim_time/self.init_dt))
             dt = sim_time/num_steps
             for i in range(num_steps):
                 solver.step(dt)
@@ -469,11 +469,12 @@ class FluidModel:
     
     def t_derivative(self, x, delta_T):
         MPI.COMM_WORLD.Barrier()
-        # Return dF/dt
+        # Return dF/dt (restores model state to x afterwards)
         solver = self.ivp_problem.build_solver(de.RK222)
         self.set_state(x)
         solver.step(delta_T)
         x_out = self.get_state()
+        self.set_state(x)  # restore state so caller's view is unchanged
         return (x_out - x) / delta_T
     def x_derivative(self, x):
         # Return dF/dx

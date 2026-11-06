@@ -36,6 +36,8 @@ class ECSSolver:
         self.gmres_min_error = (params or {}).get('gmres_min_error', 1e-20)
         self.trust_radius_min = (params or {}).get('trust_radius_min', 1e-4)
         self.trust_radius = (params or {}).get('trust_radius', 1.0)
+        # upper bound when the radius grows back after good steps (default: the initial radius)
+        self.trust_radius_max = (params or {}).get('trust_radius_max', self.trust_radius)
         #
         self.krylov_dim = (params or {}).get('krylov_dim', 50)
         self.krylov_dim_min = (params or {}).get('krylov_dim_min', 20)
@@ -109,8 +111,8 @@ class ECSSolver:
 
         return xi_out 
     def arnoldi_iteration_inner(self, xi_base, Q, phi_base, k:int):
-        Qk = self.LinearOperator(xi_base, Q[:, k - 1], phi_base)
-        # logger.info(f"Arnoldi iteration {k}, ||Qk|| before orthogonalization: {np.linalg.norm(Qk)}")
+        Qk = self.LinearOperator(xi_base, Q[:, k-1], phi_base)
+        # Modified Gram-Schmidt (MGS) orthogonalization
         Hk = np.zeros(k+1)
         for j in range(0, k):
             Hk[j] = np.matmul(np.conj(Q[:,j]), Qk)
@@ -118,6 +120,7 @@ class ECSSolver:
         Hk[k] = np.linalg.norm(Qk)
         Qk = Qk/Hk[k]
         return Qk, Hk
+    
     def arnoldi_iteration(self, x_base, phi_base, T:float, ax:float, ay:float, az:float, r, n:int):
         ''' Arnoldi iteration '''
         neutral_basis = []
@@ -224,6 +227,7 @@ class ECSSolver:
         res = scipy.optimize.minimize(fun, w_init, args=(H_[0:k_+1,0:k_]), method='SLSQP', jac = Jacobian,
             constraints=(ineq_cons), options={'ftol': 1e-34, 'disp': False, 'maxiter': 100000000}, bounds=None)
         return res
+    
     def GMRES(self, xi_base, xi_pert, phi_base, b, kmax, tr):
         xk = np.copy(xi_pert)
         logger.info("Starting GMRES ...")
@@ -240,14 +244,15 @@ class ECSSolver:
         best_k = 1
         min_error = rho
 
-        for k in range(1, kmax):
+        for k in range(1, kmax+1):
             Q[:,k], H[:k+1,k-1] = self.arnoldi_iteration_inner(xi_base, Q[:,0:k], phi_base, k)
             
             res = self.Hookstep(H, beta, k, tr)
             rho = np.linalg.norm(res.fun)
-            
             min_error = rho
+
             xk = np.matmul(Q[:,0:k], res.x)
+
             logger.info(f"GMRES iteration {k}, residual norm: {rho:.5e}")
             best_k = k
             if self.krylov_dim_min <= k and rho < self.gmres_min_error:
@@ -256,14 +261,30 @@ class ECSSolver:
         test = np.linalg.norm(self.NonlinearOperator(np.copy(xi_base)+xi_pert+xk))
         tr_local = tr
 
+        # Shrink the radius until the step actually reduces the residual
         while test > 0.99*b_norm and tr_local > self.trust_radius_min:
+            tr_local = 0.5*tr_local
             res = self.Hookstep(H, beta, best_k, tr_local)
             xk = np.matmul(Q[:,0:(best_k)], res.x)
             min_error = np.linalg.norm(res.fun)
             test = np.linalg.norm(self.NonlinearOperator(np.copy(xi_base)+xi_pert+xk))
-            tr_local = 0.5*tr_local
-            
-        return xi_pert + xk, min_error, tr_local
+
+        # Radius for the next Newton step, from how well the linear model predicted
+        # the residual drop (ratio = actual / predicted reduction):
+        #   good prediction and step limited by the radius -> grow (up to trust_radius_max)
+        #   poor prediction                                -> shrink
+        predicted = b_norm - np.sqrt(max(res.fun, 0.0))
+        ratio = (b_norm - test) / predicted if predicted > 0 else 0.0
+        on_boundary = np.linalg.norm(res.x) >= 0.99*tr_local
+        if ratio > 0.75 and on_boundary:
+            tr_next = min(2.0*tr_local, self.trust_radius_max)
+        elif ratio < 0.25:
+            tr_next = 0.5*tr_local
+        else:
+            tr_next = tr_local
+        logger.info(f"Trust region: used {tr_local:.4g}, actual/predicted reduction {ratio:.3f}, next {tr_next:.4g}")
+
+        return xi_pert + xk, min_error, max(tr_next, self.trust_radius_min)
     
     def save_flow_properties(self, xi, filename="flow_properties.csv"):
         x0_curr, Tp_curr, ax_curr, ay_curr, az_curr = self.unpack_xi(xi)
@@ -510,6 +531,7 @@ class ECSSolver:
             phi_base = self.G(x0_curr, Tp_curr, ax_curr, ay_curr, az_curr)
 
             dxi, error, tr = self.GMRES(xi, xi_pert, phi_base, nonlinear_res, self.krylov_dim, self.trust_radius)
+            self.trust_radius = tr # adaptive: shrinks after poor steps, grows back after good ones
 
             xi += dxi # Update the solution
 

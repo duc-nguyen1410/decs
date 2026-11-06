@@ -173,10 +173,10 @@ class SaltFinger(DoubleDiffusion):
             self.ivp_problem.add_equation(f"integ({v}) = 0")
     def build_evp_problem(self):
         sigma = self.dist.Field(name='sigma')
-        tau_p = self.dist.Field(name='tau_p')
-        tau_u = self.dist.VectorField(self.coords, name='tau_u')
-        tau_te = self.dist.Field(name='tau_te')
-        tau_sa = self.dist.Field(name='tau_sa')
+        tau_p = self.dist.Field(name='tau_p_evp')
+        tau_u = self.dist.VectorField(self.coords, name='tau_u_evp')
+        tau_te = self.dist.Field(name='tau_te_evp')
+        tau_sa = self.dist.Field(name='tau_sa_evp')
 
         unit_vectors = self.coords.unit_vector_fields(self.dist)
         if self.dim == 2:
@@ -186,17 +186,19 @@ class SaltFinger(DoubleDiffusion):
             ex, ey, ez = unit_vectors
 
         # PARAMETERS / BACKGROUND FIELDS (The Knowns)
-        self.Ra_param = self.dist.Field(name='Ra_param'); self.Ra_param['g'] = self.params['Ra']
-        self.Pr_param = self.dist.Field(name='Pr_param'); self.Pr_param['g'] = self.params['Pr']
-        self.Rrho_param = self.dist.Field(name='Rrho_param'); self.Rrho_param['g'] = self.params['Rrho']
-        self.tau_param = self.dist.Field(name='tau_param'); self.tau_param['g'] = self.params['tau']
+        # PARAMETERS already created in build_ivp_problem
+        # self.Ra_param = self.dist.Field(name='Ra_param'); self.Ra_param['g'] = self.params['Ra']
+        # self.Pr_param = self.dist.Field(name='Pr_param'); self.Pr_param['g'] = self.params['Pr']
+        # self.Rrho_param = self.dist.Field(name='Rrho_param'); self.Rrho_param['g'] = self.params['Rrho']
+        # self.tau_param = self.dist.Field(name='tau_param'); self.tau_param['g'] = self.params['tau']
 
         ns = {'np': np,
               'Ra': self.Ra_param, 'Pr': self.Pr_param, 'Rrho': self.Rrho_param, 'tau': self.tau_param,
               'ex': ex, 'ey': ey, 'ez': ez,
               'w': self.u @ ez,
               'u_eq': self.u_eq, 'te_eq': self.te_eq, 'sa_eq': self.sa_eq,
-              'sigma': sigma
+              'sigma': sigma,
+              'tau_p': tau_p, 'tau_u': tau_u, 'tau_te': tau_te, 'tau_sa': tau_sa,
              }
         vars = [self.p, self.u, self.te, self.sa, 
                 tau_p, tau_u, tau_te, tau_sa]
@@ -211,6 +213,7 @@ class SaltFinger(DoubleDiffusion):
         # Integral constraints
         for v in ['u', 'te', 'sa']:
             self.evp_problem.add_equation(f"integ({v}) = 0")
+
     def get_flow_properties(self):
         ex = self.coords.unit_vector_fields(self.dist)[0]
         ez = self.coords.unit_vector_fields(self.dist)[-1]

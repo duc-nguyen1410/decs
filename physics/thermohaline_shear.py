@@ -233,10 +233,8 @@ class ThermohalineShear(DoubleDiffusion):
         I_t = (4*(np.pi**2)*Ri)/(Lambda-1)*de.Average(self.te*w) # kinetic energy input by temperature-induced bouyancy
         I_s = -(4*(np.pi**2)*Ri)/(Lambda-1)*de.Average(self.sa*w) # kinetic energy input by salinity-induced bouyancy
         I_shear = de.Average(-ux * w * dz(baru)) # kinetic energy input by background shear
-                
+        
         # .evaluate() returns a field object
-        # ['g'] accesses the grid data
-        # Nusselt and Sherwood numbers 
         Ft_val = Ft.evaluate()['g'].real
         Fs_val = Fs.evaluate()['g'].real
         Nu_val = Nu.evaluate()['g'].real
