@@ -18,16 +18,16 @@ For example, some solutions identified in salt-finger convection include:
         <td align="center"><b>Relative periodic orbit</b></td>
     </tr>
     <tr>
-        <td><img src="examples/Lx0.6_WF/WF_Lx0.6.png" height="200"/></td>
-        <td><img src="examples/Lx0.6_TM1/TM1.png" height="200"/></td>
-        <td><img src="examples/Lx0.8_PO3/PO3.png" height="200"/></td>
-        <td><img src="examples/Lx0.8_RPO2/RPO2.png" height="200"/></td>
+        <td align="center"><img src="docs/media/WF_Lx0.6.png" height="200" alt="Equilibrium WF, Lx = 0.6"/></td>
+        <td align="center"><img src="docs/media/TM1_Lx0.6.webp" height="200" alt="Traveling wave TM1, Lx = 0.6"/></td>
+        <td align="center"><img src="docs/media/PO3_Lx0.8.webp" height="200" alt="Periodic orbit PO3, Lx = 0.8"/></td>
+        <td align="center"><img src="docs/media/RPO2_Lx0.8.webp" height="200" alt="Relative periodic orbit RPO2, Lx = 0.8"/></td>
     </tr>
     <tr>
-        <td align="center">(static)</td>
-        <td align="center"><a href="examples/Lx0.6_TM1/S1.mp4">Watch video</a></td>
-        <td align="center"><a href="examples/Lx0.8_PO3/S2.mp4">Watch video</a></td>
-        <td align="center"><a href="examples/Lx0.8_RPO2/S3.mp4">Watch video</a></td>
+        <td align="center">(steady)</td>
+        <td align="center"><a href="docs/media/TM1_Lx0.6.mp4">full-resolution video</a></td>
+        <td align="center"><a href="docs/media/PO3_Lx0.8.mp4">full-resolution video</a></td>
+        <td align="center"><a href="docs/media/RPO2_Lx0.8.mp4">full-resolution video</a></td>
   </tr>
 </table>
 </div>
