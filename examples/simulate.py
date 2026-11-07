@@ -9,7 +9,7 @@ import logging
 logger = logging.getLogger(__name__)
 import matplotlib.pyplot as plt
 import dedalus.public as de
-from physics.salt_finger import SaltFinger # import your physics model here 
+from physics import SaltFinger # import your physics model here 
 
 sizes = (128, 128)
 bounds = (0.5, 1.0)
@@ -41,7 +41,7 @@ SFC.set_initial_conditions(mode='random')
 # SFC.load_state('state_file_path') # get a state
 # SFC.add_perturbation() # pertub current state by a random noise
 
-SFC.set_CFL(solver)
+SFC.set_cfl(solver)
 
 # saving data for post-processing if needed, as in Dedalus normally
 SFC.set_snapshots(solver=solver,sim_dt=0.001)

@@ -1,158 +1,106 @@
-To build new governing equations, you have to create a new class `NewProblem` from base class `FluidModel`. In general, this class acts as a base for multiple problems using the same number of fields (velocity, temperature, density,...).
+# Adding a new problem
+
+A model is a Python class that owns a Dedalus domain, its fields and an initial-value problem (IVP). Once it follows the conventions below, the [ECS solver](ecs_solver.md), stability analysis, continuation and saving/loading work with it unchanged.
+
+There are two ways to start:
+- **Same fields as an existing family** (e.g. velocity, temperature and salinity): subclass the family's base class, such as `DoubleDiffusion`, and only write the equations.
+- **New set of fields**: subclass `FluidModel` and also create the domain and fields.
+
+## Option 1: subclass an existing base class
+
+`DoubleDiffusion` (`physics/double_diffusion_base.py`) already creates the domain and the fields `p`, `u`, `te`, `sa` (plus `u_eq`, `te_eq`, `sa_eq` for an eigenvalue problem). A new double-diffusive model only needs its equations and diagnostics. Use [`physics/salt_finger.py`](../physics/salt_finger.py) as a complete template.
 
 ```python
-from physics.base import FluidModel 
+# physics/my_model.py
+import numpy as np
+import dedalus.public as de
+from .double_diffusion_base import DoubleDiffusion
 
-class NewProblem(FluidModel):
+
+class MyModel(DoubleDiffusion):
+    def build_problems(self):
+        self.build_ivp_problem()
+
+    def build_ivp_problem(self):
+        tau_p = self.dist.Field(name='tau_p')
+        tau_u = self.dist.VectorField(self.coords, name='tau_u')
+        tau_te = self.dist.Field(name='tau_te')
+        tau_sa = self.dist.Field(name='tau_sa')
+        ez = self.coords.unit_vector_fields(self.dist)[-1]
+
+        # Parameters as Dedalus fields named <name>_param, so that
+        # model.set_param('Ra', value) (used by continuation) updates them in place.
+        self.Ra_param = self.dist.Field(name='Ra_param'); self.Ra_param['g'] = self.params['Ra']
+        self.Pr_param = self.dist.Field(name='Pr_param'); self.Pr_param['g'] = self.params['Pr']
+
+        ns = {'Ra': self.Ra_param, 'Pr': self.Pr_param, 'ez': ez, 'w': self.u @ ez}
+        variables = [self.p, self.u, self.te, self.sa, tau_p, tau_u, tau_te, tau_sa]
+        self.ivp_problem = de.IVP(variables, namespace=ns)
+        self.ivp_problem.add_equation("trace(grad(u)) + tau_p = 0")
+        self.ivp_problem.add_equation("integ(p) = 0")
+        self.ivp_problem.add_equation("dt(u) + grad(p) - Pr*lap(u) - Pr*Ra*(te - sa)*ez + tau_u = - u@grad(u)")
+        self.ivp_problem.add_equation("dt(te) - lap(te) + w + tau_te = - u@grad(te)")
+        self.ivp_problem.add_equation("dt(sa) - lap(sa) + w + tau_sa = - u@grad(sa)")
+        for v in ['u', 'te', 'sa']:
+            self.ivp_problem.add_equation(f"integ({v}) = 0")
+
+    def get_flow_properties(self):
+        """Scalar diagnostics of the current state, as a dict of floats."""
+        ez = self.coords.unit_vector_fields(self.dist)[-1]
+        Nu = 1 - de.Average((self.u @ ez)*self.te)
+        return {'Nu': float(Nu.evaluate()['g'].real.flat[0])}
+```
+
+## Option 2: subclass `FluidModel`
+
+For a new set of fields, also write `__init__`, `create_domain` and `build_fields`. Copy them from [`physics/double_diffusion_base.py`](../physics/double_diffusion_base.py) and change the fields:
+
+```python
+from .base import FluidModel
+
+
+class MyFamily(FluidModel):
     def __init__(self, params, sizes, bounds, bounded=False, mode='ecs', dealias=3/2):
-        # Call the FluidModel __init__ first
         super().__init__(params, sizes, bounds, bounded, mode, dealias)
-
-        # Add additional fields, p, u, te, ...
-        # for example:
-        # pressure p (scalar)
-        self.p = None
-        self.u = None
-        self.u_eq = None # use this for EVP
-        # other fields
-        # ...
-        # replace key variable list for ECS solver
-        self.state_fields = [self.u] # for ECS
-        self.eq_fields = [self.u_eq] # for EVP, if needed
         self.create_domain()
         self.build_fields()
 
     def create_domain(self):
-        """ Creates a 2D or 3D domain/bases using Cartesian coordinates """
-        if self.dim == 2:
-            Nx, Nz = self.sizes
-            Lx, Lz = self.bounds
-        elif self.dim == 3:
-            Nx, Ny, Nz = self.sizes
-            Lx, Ly, Lz = self.bounds
-        else:
-            raise ValueError("Sizes and bounds must be length 2 or 3.")
-        MPI.COMM_WORLD.Barrier()
-        # Only instantiate CartesianCoordinates and Distributor ONCE
-        # Re-creating Distributor on every parameter evaluation leaks MPI communicators.
-        if self.dist is None:
-            if self.dim == 2:
-                self.coords = de.CartesianCoordinates('x', 'z')
-            else:
-                self.coords = de.CartesianCoordinates('x', 'y', 'z')
-            dtype = np.float64 if self.mode == 'sim' else np.complex128
-            self.dist = de.Distributor(self.coords, dtype=dtype)
-
-        # Horizontal x-basis (Always periodic)
-        self.x_basis = None
-        if self.mode=='sim':
-            self.x_basis = de.RealFourier(self.coords['x'], size=Nx, bounds=(0, Lx), dealias=self.dealias)
-        else:
-            self.x_basis = de.ComplexFourier(self.coords['x'], size=Nx, bounds=(0, Lx), dealias=self.dealias)
-        
-        # Only if 3D, Always periodic
-        if self.dim == 3:
-            self.y_basis = None
-            if self.mode=='sim':
-                self.y_basis = de.RealFourier(self.coords['y'], size=Ny, bounds=(0, Ly), dealias=self.dealias)
-            else:
-                self.y_basis = de.ComplexFourier(self.coords['y'], size=Ny, bounds=(0, Ly), dealias=self.dealias)
-
-        self.z_basis = None
-        if self.bounded:
-            # Use Chebyshev for bounded domains
-            self.z_basis = de.ChebyshevT(self.coords['z'], size=Nz, bounds=(0, Lz), dealias=self.dealias)
-        else:
-            # Use Fourier for fully periodic domains
-            if self.mode=='sim':
-                self.z_basis = de.RealFourier(self.coords['z'], size=Nz, bounds=(0, Lz), dealias=self.dealias)
-            else:
-                self.z_basis = de.ComplexFourier(self.coords['z'], size=Nz, bounds=(0, Lz), dealias=self.dealias)
-
-        self.bases = None
-        if self.dim == 2:
-            self.bases = (self.x_basis, self.z_basis)
-        else:
-            self.bases = (self.x_basis, self.y_basis, self.z_basis)
+        ...  # set self.coords, self.dist (create once) and self.bases
 
     def build_fields(self):
-        # pressure p (scalar)
-        self.p = self.dist.Field(name='p', bases=self.all_bases)
-        # velocity u (Vector)
-        self.u = self.dist.VectorField(self.coords, name='u', bases=self.all_bases)
-        self.u_eq = self.dist.VectorField(self.coords, name='u_eq', bases=self.all_bases)
-
-        # replace key variable list for ECS solver
-        self.fields = [self.u, self.Phi, self.te] # for ECS
-        self.eq_fields = [self.u_eq, self.Phi_eq, self.te_eq] # for EVP, if needed
-        
+        self.p = self.dist.Field(name='p', bases=self.bases)
+        self.u = self.dist.VectorField(self.coords, name='u', bases=self.bases)
+        self.b = self.dist.Field(name='b', bases=self.bases)
+        self.fields = [self.u, self.b]          # state seen by the ECS solver; velocity first
+        self.eq_fields = []                     # base-state fields of an EVP, if any
 ```
 
+Then add `build_problems`, `build_ivp_problem` and `get_flow_properties` in the family class or in subclasses, as in Option 1.
 
-Now we can build new spectific problems. The code should include a IVP problem, EVP problem for solving eigenvalue problem if needed for analytical solutions, 
+## What the solver relies on
+
+| Member | Used for |
+|---|---|
+| `self.fields` | the state vector: `get_state` / `set_state` flatten these fields in order |
+| `self.fields[0]` must be the velocity | CFL time stepping and the sign changes of reflections |
+| `self.ivp_problem` (built by `build_problems()`) | time integration `flow_map` |
+| `self.bases` with a Fourier first ($x$) basis | shifts and reflections in $x$; $z$ may be Fourier (`bounded=False`) or Chebyshev (`bounded=True`) |
+| `get_flow_properties()` returning a dict of floats | logs and `flow_properties.csv` |
+| parameters as `<name>_param` fields | continuation in that parameter via `set_param` |
+| `self.dist` created only once in `create_domain` | geometry continuation rebuilds the domain; re-creating the distributor leaks MPI communicators |
+
+Optional:
+- `set_snapshots`, `set_flowproperties`, `set_meanprofiles(solver, sim_dt, max_writes, mode)`: add Dedalus file handlers; used by simulations and, when `save_snapshots` etc. are on, to save the time history of a converged TW / PO / RPO. See [`physics/salt_finger.py`](../physics/salt_finger.py).
+- `build_evp_problem(self, coupled=True)`: the IVP linearised about a base state, **returning** a `de.EVP`, for `model.solve_evp(...)` and `stability_method='evp'`. Replace `dt(q)` by `sigma*q - c@grad(q)` and each nonlinear term by its linearisation, e.g. `u@grad(u)` by `u@grad(u_eq) + u_eq@grad(u)`. Take the base fields from `self.evp_base_fields(coupled)` (full fields, or z-only copies for horizontally uniform base states) and the frame velocity `c` from `self.evp_frame_velocity()`. See [`physics/salt_finger.py`](../physics/salt_finger.py) and [`physics/thermohaline_shear.py`](../physics/thermohaline_shear.py).
+- `preview()`: quick plot of the current state.
+
+## Register the model
+
+Export the class in [`physics/__init__.py`](../physics/__init__.py) so it can be imported as `from physics import MyModel`:
+
 ```python
-class ChildProblem(NewProblem):
-    def build_problems(self):
-        self.build_ivp_problem()
-        # self.build_evp_problem()
-    def build_ivp_problem(self):
-        ns = self._get_base_namespace()
-
-        # define sub-variables
-        tau_p = ...
-        tau_u1 = ...
-        tau_u2 = ...
-        lift = ...
-        grad_u = ...
-        lap_up = ...
-        # set list of variables `vars` for IVP
-        vars = [self.p, self.u]
-        # update namespace 'ns' for parameters,... if needed
-        ns.update({'Re':self.params['Re'], 
-
-                    })
-        # define IVP problem here
-        self.ivp_problem = de.IVP(vars, namespace=ns)
-        # Governing Equations
-        self.ivp_problem.add_equation("dt(u) + grad(p) -(1/Re)*lap_u + lift(tau_u2) = - u@grad_u")
-        self.ivp_problem.add_equation("trace(grad_u) + tau_p = 0")
-        self.ivp_problem.add_equation("integ(p) = 0") 
-        # other equations
-
-    # similarly, we define EVP if needed
-    # for standard ECS solver, only IVP problem is enough
-    # just use evp problem if you want to use EVP
-    def build_evp_problem(self):
-        self.evp_problem = ...
-        pass
-
-    def get_flow_properties(self):
-        """ Return flow properties of state """
-        ...
-        return {'Nu': float(Nu_val.item()),
-                'D': float(D_val.item()),
-                'I': float(I_val.item())}
-
-    def set_snapshots(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
-        """  Save snapshots during simulation or TW/PO/RPO """
-        snapshots = solver.evaluator.add_file_handler(self.odir+'snapshots', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
-        snapshots.add_task(self.te, name='te')
-        snapshots.add_task(self.u, name='u')
-
-    def set_flowproperties(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
-        """  Save flow properties (scalar value) during simulation or TW/PO/RPO """
-        ...
-        flowproperties = solver.evaluator.add_file_handler(self.odir+'flowproperties', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
-        flowproperties.add_task(1 - de.Average(w*self.te), name='Nu') # Nusselt number
-        grad_u = de.grad(self.u)
-        flowproperties.add_task(de.Average(Pr*(de.dot(grad_u @ ex, grad_u @ ex) + de.dot(grad_u @ ez, grad_u @ ez))), name='D') # Viscous dissipation
-        flowproperties.add_task(de.Average(Pr*Ra*(self.te-self.sa/Rrho)*w), name='I') # kinetic energy input by bouyancy
-
-    def set_meanprofiles(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
-        """  Save mean profiles (horizontal/vertical average) during simulation or TW/PO/RPO """
-        ...
-        meanprofiles = solver.evaluator.add_file_handler(self.odir+'meanprofiles', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
-        meanprofiles.add_task(h_mean(self.u), name='u') # horizontal averaged velocity
-        meanprofiles.add_task(h_mean(self.te), name='te') # horizontal averaged temperature
-        
+from .my_model import MyModel
 ```
+
+and add `'MyModel'` to `__all__`. Then check it with a short simulation (as in [`examples/simulate.py`](../examples/simulate.py)) before searching for ECS.

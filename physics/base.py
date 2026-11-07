@@ -1,21 +1,46 @@
 import numpy as np
 import dedalus.public as de
-import h5py
 from mpi4py import MPI
 import gc
 import matplotlib.pyplot as plt
-from .symmetry import Symmetry
+from .symmetry import Symmetry, SymmetryOps
+from .state_io import StateIO
+import os
+import time
 import logging
 logger = logging.getLogger(__name__)
-class FluidModel:
-    def __init__(self, params, sizes, bounds, bounded=False, mode='ecs', dealias=3/2):
+
+
+class EVPTooLargeError(MemoryError):
+    """The eigenvalue problem would not fit in memory (raised before anything is built)."""
+
+
+def available_memory():
+    """Memory available now, in bytes (Linux /proc/meminfo, else total physical memory)."""
+    try:
+        with open('/proc/meminfo') as f:
+            for line in f:
+                if line.startswith('MemAvailable:'):
+                    return int(line.split()[1])*1024
+    except OSError:
+        pass
+    try:
+        return os.sysconf('SC_PAGE_SIZE')*os.sysconf('SC_PHYS_PAGES')
+    except (ValueError, OSError, AttributeError):
+        return float('inf')
+
+
+class FluidModel(StateIO, SymmetryOps):
+    def __init__(self, params, sizes, bounds, bounded=False, mode='ecs', dealias=3/2, comm=None):
         """
         :param float sizes: Grid mesh of domain (Nx, Nz) or (Nx, Ny, Nz)
         :param float bounds: Domain size (Lx, Lz) or (Lx, Ly, Lz)
         :param bool bounded: Is this a domain bounded in vertical (z) direction? If yes, model will use Chebyshev grid instead of Fourier mode
         :param str mode: The model will build dist with dtype=np.complex128 and bases with de.ComplexFourier as defaults to impose ECS's symmetry. However, CFL(u) will loss stability during long-term simulation due to ComplexFourier. Therefore, you need to set mode='sim' to use dtype=float64 and RealFourier instead, to get stability of CFL(u) operator for long-time simulation. 
         :param float dealias: Grid will be scaled for enhancing convective term
+        :param comm: MPI communicator of the model (default MPI.COMM_WORLD)
         """
+        self.comm = MPI.COMM_WORLD if comm is None else comm
         self.params = params
         self.sizes = sizes
         self.bounds = bounds
@@ -35,23 +60,27 @@ class FluidModel:
         self.fields = []
         self.ivp_problem = None
         # For EVP
-        self.eq_fields = []
+        self.eq_fields = []          # base state of the EVP (same layout as self.fields)
+        self.eq_fields_z = None      # z-only copies, for base states that do not vary horizontally
         self.evp_problem = None
-        
+        self._evp_problems = {}      # coupled (True/False) -> EVP built by build_evp_problem
+        self.frame_velocity = None   # constant vector field: velocity of the co-moving frame (TW)
+        self._evp_serial = None      # (key, single-process copy) for coupled EVPs under MPI
+
         # CFL function
-        self.use_CFL = False
+        self.use_CFL = (params or {}).get('use_CFL', False)
         self.CFL = None
-        self.CFL_cadence = params.get('cadence', 10)
-        self.CFL_safety = params.get('safety', 0.5)
-        self.CFL_threshold = params.get('threshold', 0.05)
-        self.CFL_min_change = params.get('min_change', 0.5)
-        self.CFL_max_change = params.get('max_change', 1.5)
-        self.CFL_max_dt = params.get('max_dt', 0.1)
+        self.CFL_cadence = (params or {}).get('cadence', 10)
+        self.CFL_safety = (params or {}).get('safety', 0.5)
+        self.CFL_threshold = (params or {}).get('threshold', 0.05)
+        self.CFL_min_change = (params or {}).get('min_change', 0.5)
+        self.CFL_max_change = (params or {}).get('max_change', 1.5)
+        self.CFL_max_dt = (params or {}).get('max_dt', 0.1)
 
         # Output options
-        self.save_snapshots = False
-        self.save_flowproperties = True
-        self.save_meanprofiles = False
+        self.save_snapshots = (params or {}).get('save_snapshots', False)
+        self.save_flowproperties = (params or {}).get('save_flowproperties', False)
+        self.save_meanprofiles = (params or {}).get('save_meanprofiles', False)
 
         # Preview current state
         self.preview_fig = None
@@ -91,7 +120,7 @@ class FluidModel:
             # Clear references and force full rebuild for domain changes only
             self.ivp_problem = None
             gc.collect()
-            MPI.COMM_WORLD.Barrier()
+            self.comm.Barrier()
             
             self.build_problems()
             logger.info(f"Geometry parameter '{name}' updated to {value}. Full domain & problem rebuilt.")
@@ -190,151 +219,6 @@ class FluidModel:
             field.load_from_global_grid_data(data)
             cursor += size
 
-    def save_state(self, filename, dealias=False):
-        """
-        Save dealias-scaled grid data to a file
-        """
-        import os
-        import h5py
-        filename = filename + self.ext
-        target_dir = os.path.dirname(filename)
-        if self.dist.comm.rank == 0:
-            if target_dir and not os.path.exists(target_dir):
-                os.makedirs(target_dir)
-        self.dist.comm.Barrier() # Wait for directory to exist before writing
-        logger.info(f"Saving state to {filename}")
-
-        gathered_data = {}
-        for field in self.fields:
-            if not dealias: field.change_scales(1.0)
-            # Use the field name as the HDF5 dataset name
-            gathered_data[field.name] = field.allgather_data('g').real # shape [dim][nx][ny][nz]
-
-        if self.dist.comm.rank == 0:
-            # --- HDF5 Path ---
-            if self.ext == '.h5':
-                with h5py.File(filename, mode='w') as f:
-                    for name, data in gathered_data.items():
-                        field_obj = next(obj for obj in self.fields if obj.name == name)
-                        is_vector = len(field_obj.tensorsig) > 0
-                        if is_vector:
-                            # Generic component naming: u0, u1, u2 
-                            # Corresponds to (u, w) in 2D or (u, v, w) in 
-                            for i in range(data.shape[0]):
-                                f.create_dataset(f'{name}_{i}', data=data[i])
-                        else:
-                            # Scalar field (e.g., te, sa)
-                            f.create_dataset(name, data=data)
-                    
-                    # Save grid info for easy plotting later
-                    # This handles (xg, zg) or (xg, yg, zg)
-                    coords = [basis.global_grid(self.dist, scale=self.dealias if dealias else 1) 
-                            for basis in self.bases]
-                    coord_names = [basis.coord.name for basis in self.bases]
-
-                    for g_name, g_data in zip(coord_names, coords):
-                        f.create_dataset(g_name, data=g_data)
-                    
-                    # Record dimensionality for easier post-processing
-                    f.attrs['dim'] = self.dim
-            
-            # --- NetCDF Path ---
-            elif self.ext == '.nc':
-                try:
-                    import netCDF4 as nc
-                except ImportError:
-                    raise ImportError("netCDF4 library is required for .nc output.")
-                
-                with nc.Dataset(filename, mode='w', format='NETCDF4') as ds:
-                    ds.dim_attr = self.dim
-                    coords = [basis.global_grid(self.dist, scale=self.dealias if dealias else 1) for basis in self.bases]
-                    coord_names = [basis.coord.name for basis in self.bases]
-                    # Reverse for C-order / NetCDF / ParaView standard [z, y, x]
-                    coords = tuple(reversed(coords))
-                    coord_names = tuple(reversed(coord_names))
-                    
-                    for c_name, g_data in zip(coord_names, coords):
-                        # g_data is often 2D/3D from global_grid; we take the 1D slice
-                        # x is 1st axis, y 2nd, z 3rd (standard Dedalus)
-                        dim_size = g_data.size
-                        ds.createDimension(c_name, dim_size)
-                        v = ds.createVariable(c_name, 'f8', (c_name,))
-                        v[:] = g_data.flatten()
-
-                    # Add Fields
-                    # Dedalus use shape [dim][nz][ny][nx]
-                    for name, data in gathered_data.items():
-                        working_field = next(field for field in self.fields if field.name == name)
-                        is_vector = len(working_field.tensorsig) > 0
-                        if is_vector: # is vector
-                            for i in range(self.dim):
-                                var = ds.createVariable(f'{name}_{i}', 'f8', tuple(coord_names))
-                                var[:] = data[i].T # Transpose spatial dimensions [nx, ny, nz] -> [nz, ny, nx]
-                        else:
-                            var = ds.createVariable(name, 'f8', tuple(coord_names))
-                            var[:] = data.T # Transpose spatial dimensions [nx, ny, nz] -> [nz, ny, nx]
-            else:
-                raise ValueError(f"Unsupported file extension: {self.ext}")  
-        self.dist.comm.Barrier()
-
-    def load_state(self, filename):
-        """
-        Load dealias-scaled grid data from a file
-        """
-        import os
-        filename = filename + self.ext
-        logger.info(f"Loading state from {filename}")
-        
-        if self.ext == '.h5':
-            # --- HDF5 Loading Logic ---
-            with h5py.File(filename, mode='r') as f:
-                # current_shape = self.get_grid_shape() # (Nx, [Ny], Nz)
-                for field in self.fields:
-                    # Check if this field is a Vector or Scalar
-                    is_vector = len(field.tensorsig) > 0
-                    if is_vector:
-                        # Reconstruct the multi-component array (e.g., 2, Nx, Nz)
-                        # We check how many components the field expects
-                        num_comp = self.dim 
-                        # Get the shape of one component to initialize the buffer
-                        comp_shape = f[f'{field.name}_0'].shape
-                        data = np.zeros((num_comp,) + comp_shape)
-                        for i in range(num_comp):
-                            data[i] = f[f'{field.name}_{i}'][:]
-                    else:
-                        # Scalar field (e.g., te, sa)
-                        data = f[field.name][:]
-                    # Load the gathered data into the distributed field
-                    # Dedalus handles the distribution to different MPI ranks automatically
-                    field.load_from_global_grid_data(data)
-        elif self.ext == '.nc':
-            # --- NetCDF Loading Logic ---
-            try:
-                import netCDF4 as nc
-            except ImportError:
-                raise ImportError("netCDF4 library is required to load .nc files.")
-            
-            with nc.Dataset(filename, mode='r') as ds:
-                for field in self.fields:
-                    is_vector = len(field.tensorsig) > 0
-                    if is_vector:
-                        num_comp = self.dim
-                        # Get shape on disk: [nz, ny, nx] (or [nz, nx] in 2D)
-                        comp_shape_nc = ds.variables[f'{field.name}_0'].shape
-                        # Reconstruct components with original Dedalus layout: [num_comp, nx, ny, nz]
-                        # We transpose comp_shape_nc back to [nx, ny, nz]
-                        comp_shape_dedalus = comp_shape_nc[::-1]
-                        data = np.zeros((num_comp,) + comp_shape_dedalus)
-                        for i in range(num_comp):
-                            # Read [nz, ny, nx] and transpose back to [nx, ny, nz]
-                            data[i] = ds.variables[f'{field.name}_{i}'][:].T # saved data' shape is [nz][ny][nx]
-                    else:
-                        # Read scalar field [nz, ny, nx] and transpose back to [nx, ny, nz]
-                        data = ds.variables[field.name][:].T
-                    # Distribute global data back into Dedalus field using (Dim, Nx, [Ny], Nz)
-                    field.load_from_global_grid_data(data)
-        else:
-            raise ValueError(f"Unsupported file extension: {self.ext}")  
 
     def set_initial_conditions(self,mode = 'random', scale=1e-3):
         """ Set initial condition for each field """
@@ -355,29 +239,212 @@ class FluidModel:
         for field in self.fields:
             field['g'] += scale * np.random.standard_normal(field['g'].shape)
 
-    def set_CFL(self, solver):
+    def set_cfl(self, solver):
         """ Set up the CFL condition for adaptive time-stepping. """
         self.CFL = de.CFL(solver, initial_dt=self.init_dt, cadence=self.CFL_cadence, safety=self.CFL_safety, threshold=self.CFL_threshold, 
                           max_change=self.CFL_max_change, min_change=self.CFL_min_change, max_dt=self.CFL_max_dt)
         self.CFL.add_velocity(self.fields[0]) # Assuming the first field is velocity; adjust if needed
 
-    def solve_EVP(self, x0, N=20, target=1.0):
+    # ------------------------------------------------------------------
+    # Linear stability from the eigenvalue problem (EVP)
+    # ------------------------------------------------------------------
+    def evp_base_fields(self, coupled):
+        """Base-state fields for build_evp_problem: the full eq_fields (coupled EVP), or
+        z-only copies (one small EVP per horizontal wavenumber)."""
+        if coupled:
+            return self.eq_fields
+        if self.eq_fields_z is None:
+            self.eq_fields_z = [
+                self.dist.VectorField(self.coords, name=f.name + '_z', bases=self.bases[-1])
+                if len(f.tensorsig) > 0 else self.dist.Field(name=f.name + '_z', bases=self.bases[-1])
+                for f in self.eq_fields]
+        return self.eq_fields_z
+
+    def evp_frame_velocity(self):
+        """Constant vector field c for the co-moving-frame term -c.grad(q) of an EVP."""
+        if self.frame_velocity is None:
+            self.frame_velocity = self.dist.VectorField(self.coords, name='c_frame')
+        return self.frame_velocity
+
+    def varies_horizontally(self, x, rtol=1e-10):
+        """True if the state x depends on x (or y in 3-D)."""
+        scale = max(np.linalg.norm(x), 1e-300)
+        derivs = [self.x_derivative(x)] + ([self.y_derivative(x)] if self.dim == 3 else [])
+        return any(np.linalg.norm(d) > rtol*scale for d in derivs)
+
+    def evp_unknowns(self, coupled):
+        """Number of unknowns of the EVP matrix: all modes (coupled) or one horizontal wavenumber."""
+        if coupled not in self._evp_problems:
+            self._evp_problems[coupled] = self.build_evp_problem(coupled=coupled)
+        n = 0
+        for var in self._evp_problems[coupled].variables:
+            components = int(np.prod([cs.dim for cs in var.tensorsig]))
+            n += components*int(np.prod([b.size for b in var.domain.bases]))
+        if not coupled:
+            n //= int(np.prod(self.sizes[:-1]))
+        return n
+
+    def evp_memory_estimate(self, coupled):
+        """Rough peak memory (bytes) of one EVP subproblem: a horizontally varying base state
+        couples almost all modes, so the factorized matrix is nearly dense (~ n^2 entries)."""
+        return self.EVP_BYTES_PER_ENTRY*self.evp_unknowns(coupled)**2
+
+    EVP_BYTES_PER_ENTRY = 16   # calibrated on SaltFinger 32^2 / 48^2 (see docs/ecs_solver.md)
+
+    def solve_evp(self, x_eq, N=10, target=0.0, frame_velocity=None, coupled=None, dense_limit=2000,
+                  ncc_cutoff=1e-6, max_memory=None, exclude=None, exclude_overlap=0.9):
         """
-        Solve eigenvalue problem using Dedalus's EVP with a base state 'x0'. 
-        Finding N eigenmodes near to target eigenvalue.
+        Linear stability of a steady base state x_eq from the model's eigenvalue problem
+            sigma M q + L(x_eq) q = 0,      perturbations q ~ exp(sigma t).
+        Works for equilibria, and for traveling waves in their co-moving frame
+        (frame_velocity = (cx, [cy,] cz), with c = a*L/Tp for a wave shifted by a*L per Tp).
+
+        coupled : couple all directions (needed when x_eq varies horizontally). Dedalus cannot
+                  couple distributed directions, so under MPI a coupled EVP is solved by rank 0
+                  alone, on a single-process copy of the model (the others wait).
+                  None: coupled exactly when x_eq varies horizontally. Otherwise one small EVP
+                  per horizontal wavenumber, spread over the MPI processes.
+        Subproblems up to dense_limit unknowns are solved densely (all eigenvalues), larger
+        ones with a sparse shift-invert search for the N eigenvalues nearest `target`.
+        ncc_cutoff: relative size below which coefficients of the base state are dropped
+        when building the matrices (Dedalus default).
+        max_memory: memory (GB) the EVP may use; default 80% of the memory available now.
+        A coupled EVP needs ~ n^2 storage (n ~ 5 Nx Nz in 2-D): if the estimate exceeds this,
+        EVPTooLargeError is raised before anything is built (128^2 needs ~100 GB).
+        exclude: state vectors (e.g. the neutral shifts d/dx x_eq, d/dz x_eq) whose modes are
+        dropped: a mode is dropped if more than `exclude_overlap` of its norm lies in their span.
+        Extra modes are searched so that still N modes are returned.
+
+        Returns (eigenvalues, modes): the N eigenvalues with the largest real part found,
+        sorted by decreasing real part, and the modes as state vectors (real part on the grid,
+        as get_state()). The model's state fields are overwritten.
         """
-        MPI.COMM_WORLD.Barrier()
-        solver = self.evp_problem.build_solver()
-        self.set_eq_state(x0)
-        solver.solve_sparse(solver.subproblems[0], N=N, target=target)
-        evals = solver.eigenvalues
-        emodes = solver.eigenvectors
-        sorted_indices = np.argsort(-evals.real)
-        evals = evals[sorted_indices]
-        emodes = emodes[:, sorted_indices]
-        solver.set_state(sorted_indices[0], solver.subsystems[0])
-        return evals, emodes
-    
+        comm = self.dist.comm
+        if self.dist.dtype != np.complex128:
+            raise ValueError("solve_evp needs complex fields: build the model with mode='ecs'.")
+        if coupled is None:
+            coupled = self.varies_horizontally(x_eq)
+        n, need = self.evp_unknowns(coupled), self.evp_memory_estimate(coupled)
+        limit = max_memory*1e9 if max_memory is not None else 0.8*comm.bcast(available_memory(), root=0)
+        logger.info(f"EVP ({'coupled' if coupled else 'per wavenumber'}): {n} unknowns per subproblem, "
+                    f"estimated memory {need/1e9:.1f} GB (limit {limit/1e9:.1f} GB)")
+        if need > limit:
+            raise EVPTooLargeError(
+                f"The {'coupled ' if coupled else ''}EVP has {n} unknowns and needs about {need/1e9:.0f} GB "
+                f"(limit {limit/1e9:.0f} GB). Use Arnoldi (stability_method='arnoldi'), or solve the EVP "
+                f"on the base state interpolated to a lower resolution.")
+        if coupled and comm.size > 1:
+            return self._solve_evp_on_root(x_eq, N=N, target=target, frame_velocity=frame_velocity,
+                                           dense_limit=dense_limit, ncc_cutoff=ncc_cutoff,
+                                           max_memory=limit/1e9, exclude=exclude,
+                                           exclude_overlap=exclude_overlap)
+        if coupled not in self._evp_problems:
+            self._evp_problems[coupled] = self.build_evp_problem(coupled=coupled)
+        self.evp_problem = self._evp_problems[coupled]
+
+        # base state and frame velocity
+        self.set_eq_state(x_eq)
+        if not coupled:  # z-only copies of the (horizontally uniform) base state
+            first = (Ellipsis,) + (slice(0, 1),)*(self.dim - 1) + (slice(None),)
+            for full, zonly in zip(self.eq_fields, self.eq_fields_z):
+                full.change_scales(1)
+                zonly.load_from_global_grid_data(full.allgather_data('g')[first])
+        c = self.evp_frame_velocity()
+        c['g'] = 0
+        if frame_velocity is not None:
+            for i, ci in enumerate(frame_velocity):
+                c['g'][i] = ci
+
+        # directions to exclude (neutral shifts): orthonormal real basis U, search a few extra modes
+        U = None
+        if exclude is not None and len(exclude) > 0:
+            U, _ = np.linalg.qr(np.array(exclude, dtype=float).T)
+        n_search = N + (2*U.shape[1] if U is not None else 0)
+
+        self.comm.Barrier()
+        solver = self.evp_problem.build_solver(matrix_coupling=[True]*self.dim, ncc_cutoff=ncc_cutoff) if coupled \
+            else self.evp_problem.build_solver(ncc_cutoff=ncc_cutoff)
+        found = []      # (eigenvalue, owner rank, local subproblem, eigenvector)
+        for sp in solver.subproblems:
+            solver.build_matrices([sp], ['M', 'L'])   # EVP matrices are built lazily
+            n = sp.L_min.shape[0]
+            if n <= dense_limit:
+                solver.solve_dense(sp)
+            else:
+                solver.solve_sparse(sp, N=min(n_search, n - 2), target=target)
+            lams = solver.eigenvalues
+            ok = np.where(np.isfinite(lams) & (np.abs(lams) < 1e12))[0]   # drop infinite (algebraic) modes
+            for j in ok[np.argsort(-lams[ok].real)][:n_search]:           # keep the most unstable
+                found.append((lams[j], sp, solver.eigenvectors[:, j].copy()))
+        found.sort(key=lambda t: -t[0].real)
+        found = found[:n_search]
+
+        # global selection: the N largest real parts over all processes
+        everything = [(lam, rank, i) for rank, lams in enumerate(comm.allgather([t[0] for t in found]))
+                      for i, lam in enumerate(lams)]
+        everything.sort(key=lambda t: -t[0].real)
+        eigenvalues, modes = [], []
+        for lam, rank, i in everything:
+            if len(modes) == N:
+                break
+            for var in solver.state:
+                var['c'] = 0
+            if rank == comm.rank:
+                _, sp, vec = found[i]
+                sp.subsystems[0].scatter(vec, solver.state)
+            if U is not None:   # drop modes lying (almost) in the span of the excluded directions
+                q = np.concatenate([self._grid_data(f).ravel() for f in self.fields])
+                overlap = np.linalg.norm(U.T @ q)/max(np.linalg.norm(q), 1e-300)
+                if overlap > exclude_overlap:
+                    logger.info(f"EVP: dropped neutral mode lambda = {lam:.6g} (overlap {overlap:.3f})")
+                    continue
+            eigenvalues.append(lam)
+            modes.append(self.get_state())
+        return np.array(eigenvalues), np.array(modes).reshape(len(modes), -1).T
+
+    @staticmethod
+    def _grid_data(field):
+        """Global complex grid data of a field at scale 1 (all ranks)."""
+        field.change_scales(1)
+        return field.allgather_data('g')
+
+    def _serial_copy(self):
+        """Single-process copy of this model (same class, parameters and domain) on rank 0,
+        rebuilt only when the parameters or the domain change."""
+        key = (repr(sorted(self.params.items())), tuple(self.sizes), tuple(self.bounds))
+        if self._evp_serial is None or self._evp_serial[0] != key:
+            copy = type(self)(dict(self.params), self.sizes, self.bounds, self.bounded, self.mode,
+                              self.dealias, comm=MPI.COMM_SELF)
+            copy.build_problems()
+            self._evp_serial = (key, copy)
+        return self._evp_serial[1]
+
+    def _solve_evp_on_root(self, x_eq, **kwargs):
+        """Coupled EVP under MPI: Dedalus cannot couple distributed directions, so rank 0 solves
+        it on a single-process copy of the model while the other ranks wait; the result is
+        broadcast to all ranks."""
+        comm = self.dist.comm
+        logger.info(f"Coupled EVP: solving on rank 0 only ({comm.size} processes in the run).")
+        result, error = None, None
+        if comm.rank == 0:
+            try:
+                result = self._serial_copy().solve_evp(x_eq, coupled=True, **kwargs)
+            except Exception as exc:       # report on all ranks instead of hanging the others
+                logger.exception("Coupled EVP failed on rank 0")
+                error = f"{type(exc).__name__}: {exc}"
+        # The other ranks wait without spinning: a blocking MPI wait polls at 100% CPU and
+        # would compete with rank 0's multithreaded factorization.
+        request = comm.Ibarrier()
+        while not request.Test():
+            time.sleep(0.1)
+        result, error = comm.bcast((result, error), root=0)
+        if error is not None:
+            raise RuntimeError(f"Coupled EVP failed on rank 0: {error}")
+        eigenvalues, modes = result
+        if modes.shape[1] > 0:
+            self.set_state(modes[:, -1])   # same side effect as the serial path: state fields overwritten
+        return eigenvalues, modes
+
     def show_state(self):
         """
         Show the current state of the system.
@@ -397,36 +464,48 @@ class FluidModel:
             fig.colorbar(im)
             plt.show(block=True)
             
-    def F_Tp(self, x0, Tp):
-        gc.collect() # free unreachable objects in system
-        MPI.COMM_WORLD.Barrier()
+    # ------------------------------------------------------------------
+    # Time integration
+    # ------------------------------------------------------------------
+    def _new_ivp_solver(self, x0, stop_time):
+        """Fresh RK222 IVP solver starting from state x0 at t = 0."""
         solver = self.ivp_problem.build_solver(de.RK222)
         self.set_state(x0)
-        solver.stop_sim_time = Tp
+        solver.stop_sim_time = stop_time
         solver.sim_time = 0
         solver.iteration = 0
         solver.stop_wall_time = np.inf
         solver.stop_iteration = np.inf
+        return solver
+
+    def _integrate(self, solver, T):
+        """Advance solver to time T: CFL-adaptive steps (use_CFL), else equal steps of ~init_dt."""
         if self.use_CFL:
-            self.set_CFL(solver)
+            self.set_cfl(solver)
             while solver.proceed:
                 dt = self.CFL.compute_timestep()
-                if solver.sim_time + dt > Tp:
-                    dt = Tp - solver.sim_time
+                if solver.sim_time + dt > T:
+                    dt = T - solver.sim_time
                 solver.step(dt)
         else:
-            num_steps = int(Tp/self.init_dt)
-            dt = Tp/num_steps
+            num_steps = max(1, int(T/self.init_dt))
+            dt = T/num_steps
             for i in range(num_steps):
                 solver.step(dt)
-        return self.get_state()
-    def save_time_dependent_solution(self, x0, Tp:float, ax=0, ay=0, az=0):
-        MPI.COMM_WORLD.Barrier()
-        logger.info("Saving time-dependent solutions.")
-        solver = self.ivp_problem.build_solver(de.RK222)
-        self.set_state(x0)
 
-        # set T
+    def flow_map(self, x0, Tp):
+        """Flow map: integrate x0 forward by Tp and return the final state."""
+        gc.collect() # free unreachable objects in system
+        self.comm.Barrier()
+        solver = self._new_ivp_solver(x0, Tp)
+        self._integrate(solver, Tp)
+        return self.get_state()
+
+    def save_time_dependent_solution(self, x0, Tp:float, ax=0, ay=0, az=0):
+        """Integrate a converged orbit/wave and write snapshots / flow properties /
+        mean profiles (as enabled) over 2 periods, or one full domain shift for waves."""
+        self.comm.Barrier()
+        logger.info("Saving time-dependent solutions.")
         sim_time = Tp # for periodic orbit
         n_full_solution_steps = 100
         # for traveling wave and relative periodic orbit
@@ -437,41 +516,24 @@ class FluidModel:
             sim_time = 1/a_max * Tp
             n_full_solution_steps = 2*100
 
-
-        solver.stop_sim_time = sim_time
-        solver.sim_time = 0
-        solver.iteration = 0
-        solver.stop_wall_time = np.inf
-        solver.stop_iteration = np.inf
-
+        solver = self._new_ivp_solver(x0, sim_time)
         if self.save_snapshots:
             self.set_snapshots(solver=solver, sim_dt=sim_time/n_full_solution_steps)
         if self.save_flowproperties:
             self.set_flowproperties(solver=solver, sim_dt=sim_time/n_full_solution_steps)
         if self.save_meanprofiles:
             self.set_meanprofiles(solver=solver, sim_dt=sim_time/n_full_solution_steps)
-        
-        if self.use_CFL:
-            self.set_CFL(solver)
-            while solver.proceed:
-                dt = self.CFL.compute_timestep()
-                if solver.sim_time + dt > sim_time:
-                    dt = sim_time - solver.sim_time
-                solver.step(dt)
-        else:
-            num_steps = int(sim_time/self.init_dt)
-            dt = sim_time/num_steps
-            for i in range(num_steps):
-                solver.step(dt)
+        self._integrate(solver, sim_time)
 
     
     def t_derivative(self, x, delta_T):
-        MPI.COMM_WORLD.Barrier()
-        # Return dF/dt
+        self.comm.Barrier()
+        # Return dF/dt (restores model state to x afterwards)
         solver = self.ivp_problem.build_solver(de.RK222)
         self.set_state(x)
         solver.step(delta_T)
         x_out = self.get_state()
+        self.set_state(x)  # restore state so caller's view is unchanged
         return (x_out - x) / delta_T
     def x_derivative(self, x):
         # Return dF/dx
@@ -484,15 +546,15 @@ class FluidModel:
             data_slices.append(gdata.ravel())
         return np.concatenate(data_slices)
     def y_derivative(self, x):
-            # Return dF/dx
-            self.set_state(x)
-            data_slices = []
-            for field in self.fields:
-                y_der = de.Differentiate(field, self.coords['y']).evaluate()
-                y_der.change_scales(1.0)
-                gdata = y_der.allgather_data('g').real
-                data_slices.append(gdata.ravel())
-            return np.concatenate(data_slices)
+        # Return dF/dx
+        self.set_state(x)
+        data_slices = []
+        for field in self.fields:
+            y_der = de.Differentiate(field, self.coords['y']).evaluate()
+            y_der.change_scales(1.0)
+            gdata = y_der.allgather_data('g').real
+            data_slices.append(gdata.ravel())
+        return np.concatenate(data_slices)
     def z_derivative(self, x):
         # Return dF/dz
         self.set_state(x)
@@ -503,165 +565,3 @@ class FluidModel:
             gdata = z_der.allgather_data('g').real
             data_slices.append(gdata.ravel())
         return np.concatenate(data_slices)
-    
-    def translation_ax(self, field, ax:float):
-        ''' Shift field by dx=ax*Lx in the periodic x-direction (Fourier only). '''
-        kx = self.bases[0].wavenumbers
-        dx = ax*self.bounds[0]
-        phase_shift = np.exp(1j * kx * dx)
-        field_coeff = field.allgather_data('c')
-        if self.dim == 2:
-            field_coeff *= phase_shift[:, np.newaxis]
-        elif self.dim == 3:
-            field_coeff *= phase_shift[:, np.newaxis, np.newaxis]
-        field.load_from_global_coeff_data(field_coeff)
-    
-    def translation_ay(self, field, ay:float):
-        ''' Shift field by dy=ay*Ly in the periodic y-direction (Fourier only). '''
-        if self.dim < 3:
-            return # Do nothing if 2D
-        ky = self.bases[1].wavenumbers
-        dy = ay*self.bounds[1]
-        phase_shift = np.exp(1j * ky * dy)
-        field_coeff = field.allgather_data('c')
-        field_coeff *= phase_shift[np.newaxis, :, np.newaxis]
-        field.load_from_global_coeff_data(field_coeff)
-
-    def translation_az(self, field, az:float):
-        ''' Shift field by dz=az*Lz in the periodic y-direction (Fourier only). '''
-        if self.bounded:
-            raise NotImplementedError("Cannot use phase-shift for bounded (Chebyshev) z-basis.")
-        kz = self.bases[-1].wavenumbers
-        dz = az*self.bounds[-1]
-        phase_shift = np.exp(1j * kz * dz)
-        field_coeff = field.allgather_data('c')
-        if self.dim == 2:
-            field_coeff *= phase_shift[np.newaxis,:]
-        elif self.dim == 3:
-            field_coeff *= phase_shift[np.newaxis,np.newaxis,:]
-        field.load_from_global_coeff_data(field_coeff)
-
-    def reflection_x(self,field):
-        coeff = field.allgather_data('c')
-        def build_reflection_perm_x(kx, tol=1e-12):
-            N = len(kx)
-            perm = np.zeros(N, dtype=int)
-            for i, k in enumerate(kx):
-                # find index of -k
-                j = np.where(np.abs(kx + k) < tol)[0]
-                if len(j) == 0:
-                    # must be Nyquist → self-map
-                    perm[i] = i
-                else:
-                    perm[i] = j[0]
-            return perm
-        # apply kx -> -kx permutation
-        kx = self.bases[0].wavenumbers
-        # build permutation: k -> -k
-        perm_x = build_reflection_perm_x(kx)
-        if len(field.tensorsig) > 0: # is velocity vector
-            coeff_ref  = coeff[:, perm_x, :] if self.dim==2 else coeff[:, perm_x, :, :]
-            coeff_ref[0] *= -1   # horizontal velocity is odd, change sign of ux only
-        else:
-            coeff_ref  = coeff[perm_x, :] if self.dim==2 else coeff[perm_x, :, :]
-        
-        field.load_from_global_coeff_data(coeff_ref)
-    def reflection_y(self,field):
-        if self.dim < 3:
-            return # Do nothing if 2D
-        coeff = field.allgather_data('c')
-        def build_reflection_perm_y(ky, tol=1e-12):
-            N = len(ky)
-            perm = np.zeros(N, dtype=int)
-            for i, k in enumerate(ky):
-                # find index of -k
-                j = np.where(np.abs(ky + k) < tol)[0]
-                if len(j) == 0:
-                    # must be Nyquist → self-map
-                    perm[i] = i
-                else:
-                    perm[i] = j[0]
-            return perm
-        # apply kx -> -kx permutation
-        ky = self.bases[1].wavenumbers
-        # build permutation: k -> -k
-        perm_y = build_reflection_perm_y(ky)
-        if len(field.tensorsig) > 0: # is velocity vector
-            coeff_ref  = coeff[:, :, perm_y, :]
-            coeff_ref[1] *= -1   # spanwise velocity is odd
-        else:
-            coeff_ref  = coeff[:, perm_y, :]
-
-        field.load_from_global_coeff_data(coeff_ref)
-
-    def reflection_z(self,field):
-        if self.bounded: # Apply z -> -z reflection for bounded (Chebyshev) z-basis
-            # Apply Chebyshev parity polynomial mapping: T_n(-z) = (-1)^n * T_n(z)
-            # Get total number of Chebyshev modes along z
-            Nz = field['c'].shape[-1]
-            parity = (-1) ** np.arange(Nz)  # [1, -1, 1, -1, ...]
-
-            # Reshape parity for broadcasting against field['c'] shape
-            view = [1] * field['c'].ndim
-            view[-1] = Nz
-            parity = parity.reshape(view)
-
-            # Apply Chebyshev parity reflection z -> -z
-            field['c'] *= parity
-
-            # Change the sign of fields
-            if len(field.tensorsig) > 0:
-                # Vector field (e.g., velocity u = (u, [v], w))
-                # Vertical velocity component (w) is odd under z -> -z
-                field['c'][-1] *= -1
-            else: 
-                # Scalar field (e.g., Temperature or Salinity)
-                # Flip sign if scalar fluctuation is antisymmetric about midplane
-                field['c'] *= -1
-        else: # Use Fourier permutation for periodic bases.
-            coeff = field.allgather_data('c')
-            def build_reflection_perm_z(kz, tol=1e-12):
-                N = len(kz)
-                perm = np.zeros(N, dtype=int)
-                for i, k in enumerate(kz):
-                    # find index of -k
-                    j = np.where(np.abs(kz + k) < tol)[0]
-                    if len(j) == 0:
-                        # must be Nyquist → self-map
-                        perm[i] = i
-                    else:
-                        perm[i] = j[0]
-                return perm
-            # apply kz -> -kz permutation
-            kz = self.bases[-1].wavenumbers
-            # build permutation: k -> -k
-            perm_z = build_reflection_perm_z(kz)
-            if len(field.tensorsig) > 0: # is velocity vector
-                coeff_ref  = coeff[:, :, perm_z] if self.dim==2 else coeff[:, :, :, perm_z]
-                coeff_ref[-1] *= -1   # vertical velocity is odd
-            else:
-                coeff_ref  = coeff[:, perm_z] if self.dim==2 else coeff[:, :, perm_z]
-                coeff_ref *= -1 # change sign of scalar
-            # enforce zero mode for odd variable
-            # zero_idx = np.where(kz == 0)[0][0]
-            # coeff_ref[0, :, zero_idx] = 0
-            field.load_from_global_coeff_data(coeff_ref)
-
-    def apply_symmetry(self, x, sigma:Symmetry):
-        self.set_state(x)
-        for field in self.fields:
-            # apply reflection symmetries
-            if sigma.sx == -1:
-                self.reflection_x(field)
-            if sigma.sy == -1:
-                self.reflection_y(field)
-            if sigma.sz == -1:
-                self.reflection_z(field)
-            # apply translation symmetries
-            if sigma.ax != 0:
-                self.translation_ax(field, sigma.ax)
-            if sigma.ay != 0:
-                self.translation_ay(field, sigma.ay)
-            if sigma.az != 0 and not self.bounded: # Only if z is Fourier!
-                self.translation_az(field, sigma.az)
-        return self.get_state()

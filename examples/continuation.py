@@ -8,10 +8,8 @@ import logging
 logger = logging.getLogger(__name__)
 import numpy as np
 import dedalus.public as de
-from physics.salt_finger import SaltFinger
-from physics.symmetry import Symmetry
-from ecs_core.ecs_core import ECSSolver
-from continuation.continuation import Continuation
+from physics import SaltFinger, Symmetry
+from ecs_core import ECSSolver, Continuation
 
 sizes = (128, 128)
 bounds = (0.5, 1.0)
@@ -25,7 +23,7 @@ params = {'Ra': Ra, 'Pr': Pr, 'tau': tau, 'Rrho': Rrho,
 model = SaltFinger(params=params, sizes=sizes, bounds=bounds)
 model.build_problems()
 
-nsolver_params = {'max_iterations': 5, 
+nsolver_params = {'max_iter': 5, 
                   'tol': 1e-9, 
                   'eps_t': 1e-5,
                   'eps_x': 1e-6,

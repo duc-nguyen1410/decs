@@ -8,8 +8,8 @@ import logging
 logger = logging.getLogger(__name__)
 import numpy as np
 import dedalus.public as de
-from physics.salt_finger import SaltFinger
-from ecs_core.ecs_core import ECSSolver
+from physics import SaltFinger
+from ecs_core import ECSSolver
 
 sizes = (128, 128)
 bounds = (0.6, 1.0)
@@ -43,7 +43,7 @@ nsolver.model.use_CFL = True # enable CFL operator to run faster
 
 x0 = nsolver.model.get_state()
 logger.info(f"Initial state norm: {np.linalg.norm(x0)}")
-solution, success, res, norm, properties = nsolver.NewtonSolver(x0 = x0, 
+solution, success, res, norm, properties = nsolver.solve(x0 = x0, 
                                                                 Tsearch=False, 
                                                                 Rxsearch=False, 
                                                                 Rysearch=False, 
