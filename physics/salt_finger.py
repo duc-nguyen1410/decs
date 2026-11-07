@@ -1,133 +1,18 @@
+"""
+Salt-finger convection in a fully periodic domain (validated model, paper submitted).
+Builds on the shared DoubleDiffusion base in double_diffusion_base.py.
+"""
 import dedalus.public as de
 import numpy as np
 from mpi4py import MPI
 import h5py
 import matplotlib.pyplot as plt
-from .base import FluidModel 
+from .double_diffusion_base import DoubleDiffusion
 
-class DoubleDiffusion(FluidModel):
-    def __init__(self, params, sizes, bounds, bounded=False, mode='ecs', dealias=3/2):
-        # Call the FluidModel __init__ first
-        super().__init__(params, sizes, bounds, bounded, mode, dealias)
-        # Add additional fields
-        self.p = None
-        self.u = None
-        self.te = None
-        self.sa = None
-        self.u_eq = None
-        self.te_eq = None
-        self.sa_eq = None
-        self.create_domain()
-        self.build_fields()
 
-    def create_domain(self):
-        """ Creates a 2D or 3D domain/bases in the model """
-        if self.dim == 2:
-            Nx, Nz = self.sizes
-            Lx, Lz = self.bounds
-        elif self.dim == 3:
-            Nx, Ny, Nz = self.sizes
-            Lx, Ly, Lz = self.bounds
-        else:
-            raise ValueError("Sizes and bounds must be length 2 or 3.")
-        MPI.COMM_WORLD.Barrier()
-        # Only instantiate CartesianCoordinates and Distributor ONCE
-        # Re-creating Distributor on every parameter evaluation leaks MPI communicators.
-        if self.dist is None:
-            if self.dim == 2:
-                self.coords = de.CartesianCoordinates('x', 'z')
-            else:
-                self.coords = de.CartesianCoordinates('x', 'y', 'z')
-            dtype = np.float64 if self.mode == 'sim' else np.complex128
-            self.dist = de.Distributor(self.coords, dtype=dtype)
-
-        # Horizontal x-basis (Always periodic)
-        self.x_basis = None
-        if self.mode=='sim':
-            self.x_basis = de.RealFourier(self.coords['x'], size=Nx, bounds=(0, Lx), dealias=self.dealias)
-        else:
-            self.x_basis = de.ComplexFourier(self.coords['x'], size=Nx, bounds=(0, Lx), dealias=self.dealias)
-        
-        # Only if 3D, Always periodic
-        if self.dim == 3:
-            self.y_basis = None
-            if self.mode=='sim':
-                self.y_basis = de.RealFourier(self.coords['y'], size=Ny, bounds=(0, Ly), dealias=self.dealias)
-            else:
-                self.y_basis = de.ComplexFourier(self.coords['y'], size=Ny, bounds=(0, Ly), dealias=self.dealias)
-
-        self.z_basis = None
-        if self.bounded:
-            # Use Chebyshev for bounded domains
-            self.z_basis = de.ChebyshevT(self.coords['z'], size=Nz, bounds=(0, Lz), dealias=self.dealias)
-        else:
-            # Use Fourier for fully periodic domains
-            if self.mode=='sim':
-                self.z_basis = de.RealFourier(self.coords['z'], size=Nz, bounds=(0, Lz), dealias=self.dealias)
-            else:
-                self.z_basis = de.ComplexFourier(self.coords['z'], size=Nz, bounds=(0, Lz), dealias=self.dealias)
-
-        self.bases = None
-        if self.dim == 2:
-            self.bases = (self.x_basis, self.z_basis)
-        else:
-            self.bases = (self.x_basis, self.y_basis, self.z_basis)
-
-    def build_fields(self):
-        # pressure p (scalar)
-        self.p = self.dist.Field(name='p', bases=self.bases)
-        # velocity u (Vector)
-        self.u = self.dist.VectorField(self.coords, name='u', bases=self.bases)
-        # self.u.change_scales(self.dealias)
-        self.u_eq = self.dist.VectorField(self.coords, name='u_eq', bases=self.bases)
-        # temperature \theta (scalar)
-        self.te = self.dist.Field(name='te', bases=self.bases)
-        # self.te.change_scales(self.dealias)
-        self.te_eq = self.dist.Field(name='te_eq', bases=self.bases)
-        # salinity s (scalar)
-        self.sa = self.dist.Field(name='sa', bases=self.bases)
-        # self.sa.change_scales(self.dealias)
-        self.sa_eq = self.dist.Field(name='sa_eq', bases=self.bases)
-        # re-collect fields to field list
-        self.fields = [self.u, self.te, self.sa]
-        self.eq_fields = [self.u_eq, self.te_eq, self.sa_eq]
-
-    def preview(self, field_idx=-1):
-        """ Preview the current state using last field of the system. """
-        data_g = self.fields[field_idx].allgather_data('g').real
-        if self.dist.comm.rank == 0:
-            xaxis = self.bases[0].global_grid(self.dist, scale=self.dealias)
-            zaxis = self.bases[-1].global_grid(self.dist, scale=self.dealias)
-            if self.dim == 3:
-                data_g = data_g[:,0,:] # get a 2D slice
-            # Initialize the figure only once
-            if self.preview_fig is None:
-                plt.ion()  # Turn on interactive mode
-                self.preview_fig, self.preview_ax = plt.subplots(figsize=(4,3))
-                self.preview_im = self.preview_ax.pcolormesh(xaxis.ravel(), zaxis.ravel(), data_g.T, 
-                                             cmap='RdBu_r', shading='auto')
-                self.preview_ax.set_xlabel('x')
-                self.preview_ax.set_ylabel('z')
-                self.preview_fig.colorbar(self.preview_im)
-                # self.preview_ax.set_title("Salt Concentration") 
-                self.preview_fig.canvas.draw()
-                self.preview_fig.canvas.flush_events()  
-            else:
-                self.preview_im.set_array(data_g.T.ravel())
-                v_min, v_max = np.min(data_g), np.max(data_g)
-                self.preview_im.set_clim(vmin=v_min, vmax=v_max)
-                # self.preview_ax.set_title(f"Salt Concentration at time {self.sim_time:.2f}")
-                self.preview_fig.canvas.draw()
-                self.preview_fig.canvas.flush_events()  
-
-########################################################################################
-########################################################################################
-########################################################################################
-########################################################################################
 class SaltFinger(DoubleDiffusion):
     def build_problems(self):
         self.build_ivp_problem()
-        # self.build_evp_problem()
     def build_ivp_problem(self):
         tau_p = self.dist.Field(name='tau_p')
         tau_u = self.dist.VectorField(self.coords, name='tau_u')
@@ -171,48 +56,42 @@ class SaltFinger(DoubleDiffusion):
         # Integral constraints for floating zero-means
         for v in ['u', 'te', 'sa']:
             self.ivp_problem.add_equation(f"integ({v}) = 0")
-    def build_evp_problem(self):
+    def build_evp_problem(self, coupled=True):
+        """Linearisation of the IVP about the base state (u_eq, te_eq, sa_eq), in a frame
+        moving with velocity c (traveling waves): dt -> sigma, and -c.grad(q) wherever dt
+        appears. Same options as the IVP ('stokes', 'temperature_feedback').
+        coupled: base fields on all bases (any base state); False: z-only base fields
+        (horizontally uniform base state, one EVP per horizontal wavenumber).
+        Used by FluidModel.solve_evp; needs build_ivp_problem first (parameter fields)."""
         sigma = self.dist.Field(name='sigma')
         tau_p = self.dist.Field(name='tau_p_evp')
         tau_u = self.dist.VectorField(self.coords, name='tau_u_evp')
         tau_te = self.dist.Field(name='tau_te_evp')
         tau_sa = self.dist.Field(name='tau_sa_evp')
+        ez = self.coords.unit_vector_fields(self.dist)[-1]
+        u_eq, te_eq, sa_eq = self.evp_base_fields(coupled)
 
-        unit_vectors = self.coords.unit_vector_fields(self.dist)
-        if self.dim == 2:
-            ex, ez = unit_vectors
-            ey = None # Or a zero-field if needed
+        ns = {'Ra': self.Ra_param, 'Pr': self.Pr_param, 'Rrho': self.Rrho_param, 'tau': self.tau_param,
+              'ez': ez, 'w': self.u @ ez, 'c': self.evp_frame_velocity(),
+              'u_eq': u_eq, 'te_eq': te_eq, 'sa_eq': sa_eq,
+              'sigma': sigma, 'tau_p': tau_p, 'tau_u': tau_u, 'tau_te': tau_te, 'tau_sa': tau_sa}
+        variables = [self.p, self.u, self.te, self.sa, tau_p, tau_u, tau_te, tau_sa]
+        evp = de.EVP(variables, eigenvalue=sigma, namespace=ns)
+        evp.add_equation("trace(grad(u)) + tau_p = 0")
+        evp.add_equation("integ(p) = 0")
+        if self.params.get('stokes', False):
+            evp.add_equation("grad(p) - Pr*lap(u) - Pr*Ra*(te-sa/Rrho)*ez + tau_u = 0")
         else:
-            ex, ey, ez = unit_vectors
-
-        # PARAMETERS / BACKGROUND FIELDS (The Knowns)
-        # PARAMETERS already created in build_ivp_problem
-        # self.Ra_param = self.dist.Field(name='Ra_param'); self.Ra_param['g'] = self.params['Ra']
-        # self.Pr_param = self.dist.Field(name='Pr_param'); self.Pr_param['g'] = self.params['Pr']
-        # self.Rrho_param = self.dist.Field(name='Rrho_param'); self.Rrho_param['g'] = self.params['Rrho']
-        # self.tau_param = self.dist.Field(name='tau_param'); self.tau_param['g'] = self.params['tau']
-
-        ns = {'np': np,
-              'Ra': self.Ra_param, 'Pr': self.Pr_param, 'Rrho': self.Rrho_param, 'tau': self.tau_param,
-              'ex': ex, 'ey': ey, 'ez': ez,
-              'w': self.u @ ez,
-              'u_eq': self.u_eq, 'te_eq': self.te_eq, 'sa_eq': self.sa_eq,
-              'sigma': sigma,
-              'tau_p': tau_p, 'tau_u': tau_u, 'tau_te': tau_te, 'tau_sa': tau_sa,
-             }
-        vars = [self.p, self.u, self.te, self.sa, 
-                tau_p, tau_u, tau_te, tau_sa]
-        # Define EVP
-        self.evp_problem = de.EVP(vars, eigenvalue=sigma, namespace=ns)
-        # Add equations here based on the linearized physics of salt finger convection
-        self.evp_problem.add_equation("trace(grad(u)) + tau_p = 0")
-        self.evp_problem.add_equation("integ(p) = 0") 
-        self.evp_problem.add_equation("sigma*u + grad(p) - Pr*lap(u) - Pr*Ra*(te-sa/Rrho)*ez + u@grad(u_eq)+u_eq@grad(u) + tau_u = 0")
-        self.evp_problem.add_equation("sigma*te - lap(te) + w + u@grad(te_eq)+u_eq@grad(te) + tau_te = 0")
-        self.evp_problem.add_equation("sigma*sa - tau*lap(sa) + w + u@grad(sa_eq)+u_eq@grad(sa) + tau_sa = 0")
-        # Integral constraints
+            evp.add_equation("sigma*u - c@grad(u) + grad(p) - Pr*lap(u) - Pr*Ra*(te-sa/Rrho)*ez"
+                             " + u@grad(u_eq) + u_eq@grad(u) + tau_u = 0")
+        if self.params.get('temperature_feedback', False):
+            evp.add_equation("- lap(te) + w + tau_te = 0")
+        else:
+            evp.add_equation("sigma*te - c@grad(te) - lap(te) + w + u@grad(te_eq) + u_eq@grad(te) + tau_te = 0")
+        evp.add_equation("sigma*sa - c@grad(sa) - tau*lap(sa) + w + u@grad(sa_eq) + u_eq@grad(sa) + tau_sa = 0")
         for v in ['u', 'te', 'sa']:
-            self.evp_problem.add_equation(f"integ({v}) = 0")
+            evp.add_equation(f"integ({v}) = 0")
+        return evp
 
     def get_flow_properties(self):
         ex = self.coords.unit_vector_fields(self.dist)[0]
@@ -289,4 +168,3 @@ class SaltFinger(DoubleDiffusion):
         meanprofiles.add_task(h_mean(self.u), name='u') # horizontal averaged x-axis velocity
         meanprofiles.add_task(h_mean(self.te), name='te') # horizontal averaged temperature
         meanprofiles.add_task(h_mean(self.sa), name='sa') # horizontal averaged sanility
-        
