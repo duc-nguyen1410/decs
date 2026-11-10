@@ -55,6 +55,7 @@ ecs_core/                   ECS solver
   continuation.py           Continuation: natural / pseudo-arclength continuation
   output.py                 logs, CSV and parameter files
 examples/                   example scripts and example solutions
+tests/                      test suite (pytest), see Tests below
 docs/                       documentation
 ```
 
@@ -102,6 +103,20 @@ Run in parallel with MPI, e.g. `mpiexec -n 4 python3 find_eq.py`.
 | `BoundedQuasiStaticMagnetoConvection`, `BoundedQuasiStaticMagnetoConvection_SingleMode` | not validated | quasi-static magnetoconvection |
 
 All models are imported from the package, e.g. `from physics import SaltFinger`.
+
+## Tests
+
+Run the test suite after every code change (about 1 minute, needs `pytest`):
+
+```bash
+python -m pytest tests
+```
+
+- `test_krylov.py`: GMRES, hookstep and trust region on small matrices.
+- `test_integration.py`: time integration (solver reuse, step callback, parameter changes, observables).
+- `test_regression.py`: two Newton iterations of every solution type (EQ, TW, PO, RPO), with fixed time steps and with CFL, plus Arnoldi stability, on a 32² grid. The results must equal `tests/data/regression_reference.npz` exactly.
+
+If a change is *meant* to alter the numerical results, check the new results, then regenerate the reference with `python tests/make_reference.py` and commit it with the change. On another machine or Dedalus/FFTW build, rounding can differ slightly: run with `DECS_EXACT=0` to accept relative differences below 1e-6.
 
 ## Documentation
 
