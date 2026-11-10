@@ -59,6 +59,7 @@ class FluidModel(StateIO, SymmetryOps):
         # Registry: Newton solver will see [u, ...]
         self.fields = []
         self.ivp_problem = None
+        self._ivp_cache = None       # (ivp_problem, IVP solver) reused by flow_map / t_derivative
         # For EVP
         self.eq_fields = []          # base state of the EVP (same layout as self.fields)
         self.eq_fields_z = None      # z-only copies, for base states that do not vary horizontally
@@ -134,6 +135,7 @@ class FluidModel(StateIO, SymmetryOps):
             if hasattr(self, attr_name):
                 param_field = getattr(self, attr_name)
                 param_field['g'] = value
+                self._ivp_cache = None  # parameter fields are built into the solver's matrices
                 logger.info(f"Parameter '{name}' updated to {value}")
             else:
                 logger.info(f"Parameter '{name}' doesn't exist inside model!")
@@ -467,9 +469,27 @@ class FluidModel(StateIO, SymmetryOps):
     # ------------------------------------------------------------------
     # Time integration
     # ------------------------------------------------------------------
-    def _new_ivp_solver(self, x0, stop_time):
-        """Fresh RK222 IVP solver starting from state x0 at t = 0."""
-        solver = self.ivp_problem.build_solver(de.RK222)
+    def _new_ivp_solver(self, x0, stop_time, reuse=False):
+        """RK222 IVP solver starting from state x0 at t = 0.
+        reuse: return the cached solver (built once per IVP problem; set_param drops it),
+        which avoids rebuilding the matrices on every call. RK222 keeps no history between
+        steps, so a reused solver gives the same result as a fresh one. Use reuse=False
+        when attaching file handlers, which would otherwise stay on the cached solver.
+        Building another solver from the same IVP problem invalidates the earlier one (its
+        steps no longer match a fresh solver), so a fresh build also drops the cache. Do not
+        build solvers from model.ivp_problem directly between flow_map calls."""
+        if not reuse:
+            self._ivp_cache = None
+            solver = self.ivp_problem.build_solver(de.RK222)
+        else:
+            if self._ivp_cache is None or self._ivp_cache[0] is not self.ivp_problem:
+                self._ivp_cache = (self.ivp_problem, self.ivp_problem.build_solver(de.RK222))
+            solver = self._ivp_cache[1]
+            # Handlers (incl. the nonlinear terms F and the CFL) fire only when their schedule
+            # counter increases; reset them, or the first step after iteration = 0 would reuse
+            # the F of the previous run.
+            for handler in solver.evaluator.handlers:
+                handler.last_wall_div = handler.last_sim_div = handler.last_iter_div = -1
         self.set_state(x0)
         solver.stop_sim_time = stop_time
         solver.sim_time = 0
@@ -478,27 +498,38 @@ class FluidModel(StateIO, SymmetryOps):
         solver.stop_iteration = np.inf
         return solver
 
-    def _integrate(self, solver, T):
-        """Advance solver to time T: CFL-adaptive steps (use_CFL), else equal steps of ~init_dt."""
+    def _integrate(self, solver, T, callback=None):
+        """Advance solver to time T: CFL-adaptive steps (use_CFL), else equal steps of ~init_dt.
+        callback(solver), if given, is called after every step; returning True stops the
+        integration early (at solver.sim_time < T)."""
         if self.use_CFL:
-            self.set_cfl(solver)
+            if self.CFL is None or self.CFL.solver is not solver:
+                self.set_cfl(solver)
+            else:  # reused solver: restart the CFL from init_dt, as a fresh one would
+                self.CFL.stored_dt = self.init_dt
             while solver.proceed:
                 dt = self.CFL.compute_timestep()
                 if solver.sim_time + dt > T:
                     dt = T - solver.sim_time
                 solver.step(dt)
+                if callback is not None and callback(solver):
+                    break
         else:
             num_steps = max(1, int(T/self.init_dt))
             dt = T/num_steps
             for i in range(num_steps):
                 solver.step(dt)
+                if callback is not None and callback(solver):
+                    break
 
-    def flow_map(self, x0, Tp):
-        """Flow map: integrate x0 forward by Tp and return the final state."""
+    def flow_map(self, x0, Tp, callback=None):
+        """Flow map: integrate x0 forward by Tp and return the final state.
+        callback(solver) is called after every step; returning True stops early
+        (the state at that time is returned, solver.sim_time gives the time reached)."""
         gc.collect() # free unreachable objects in system
         self.comm.Barrier()
-        solver = self._new_ivp_solver(x0, Tp)
-        self._integrate(solver, Tp)
+        solver = self._new_ivp_solver(x0, Tp, reuse=True)
+        self._integrate(solver, Tp, callback)
         return self.get_state()
 
     def save_time_dependent_solution(self, x0, Tp:float, ax=0, ay=0, az=0):
@@ -529,8 +560,7 @@ class FluidModel(StateIO, SymmetryOps):
     def t_derivative(self, x, delta_T):
         self.comm.Barrier()
         # Return dF/dt (restores model state to x afterwards)
-        solver = self.ivp_problem.build_solver(de.RK222)
-        self.set_state(x)
+        solver = self._new_ivp_solver(x, delta_T, reuse=True)
         solver.step(delta_T)
         x_out = self.get_state()
         self.set_state(x)  # restore state so caller's view is unchanged
@@ -565,3 +595,25 @@ class FluidModel(StateIO, SymmetryOps):
             gdata = z_der.allgather_data('g').real
             data_slices.append(gdata.ravel())
         return np.concatenate(data_slices)
+
+    # ------------------------------------------------------------------
+    # Observables of a state vector (set the model state to x)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _volume_average(operand):
+        """Volume average of a scalar expression, as a float on all ranks."""
+        avg = de.Average(operand).evaluate()
+        avg.change_scales(1)
+        return float(avg.allgather_data('g').real.ravel()[0])
+
+    def l2norm(self, x):
+        """L2 norm of the flow field: sqrt(<sum over fields |q|^2>), <.> the volume average."""
+        self.set_state(x)
+        return np.sqrt(self._volume_average(sum(f @ f if len(f.tensorsig) > 0 else f*f
+                                                for f in self.fields)))
+
+    def kinetic_energy(self, x):
+        """Kinetic energy 1/2 <|u|^2> of the velocity (the first field)."""
+        self.set_state(x)
+        u = self.fields[0]
+        return 0.5*self._volume_average(u @ u)
