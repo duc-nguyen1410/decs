@@ -50,6 +50,7 @@ physics/                    physical models (Dedalus problems)
   magneto.py                magnetoconvection models (not yet validated)
 ecs_core/                   ECS solver
   newton.py                 ECSSolver: Newton-Krylov hookstep solver
+  multishoot.py             MultiShootECSSolver: multiple shooting for PO / RPO
   krylov.py                 GMRES, hookstep and trust region (pure numpy)
   stability.py              Floquet stability analysis
   continuation.py           Continuation: natural / pseudo-arclength continuation
@@ -87,6 +88,7 @@ Run in parallel with MPI, e.g. `mpiexec -n 4 python3 find_eq.py`.
 | Traveling wave | `Rxsearch=True` and/or `Rzsearch=True`, initial shift `ax` / `az` | [find_tw.py](examples/find_tw.py) |
 | Periodic orbit | `Tsearch=True`, initial period `Tp` | [find_po.py](examples/find_po.py) |
 | Relative periodic orbit | `Tsearch=True` and a shift search, e.g. `Rxsearch=True` | [find_rpo.py](examples/find_rpo.py) |
+| PO / RPO by multiple shooting | `MultiShootECSSolver(model, {..., 'n_segments': m})`, same `solve` arguments, see [docs](docs/ecs_solver.md#multiple-shooting) | |
 | Parameter continuation | `Continuation(solver, params).run_continuation(...)`; resume a stopped run with `restart_continuation(...)` | [continuation.py](examples/continuation.py) |
 | Poincaré section, recurrence search | `PoincareSection(model, observable, level).run(x0, T)`, `recurrence_search(...)`, see [docs](docs/ecs_solver.md#poincaré-sections-and-recurrence-search) | |
 | Edge tracking | `EdgeTracker(model, params).track(x_lam, x_turb, T_track)`, see [docs](docs/ecs_solver.md#edge-tracking) | |
@@ -110,7 +112,7 @@ All models are imported from the package, e.g. `from physics import SaltFinger`.
 
 ## Tests
 
-Run the test suite after every code change (about 1 minute, needs `pytest`):
+Run the test suite after every code change (a few minutes, needs `pytest`):
 
 ```bash
 python -m pytest tests
@@ -119,6 +121,7 @@ python -m pytest tests
 - `test_krylov.py`: GMRES, hookstep and trust region on small matrices.
 - `test_integration.py`: time integration (solver reuse, step callback, parameter changes, observables).
 - `test_poincare.py`: Poincaré crossings and recurrences of a toy limit cycle.
+- `test_multishoot.py`: multiple shooting (one segment equals single shooting exactly; Jacobian against finite differences).
 - `test_edge.py`: edge tracking on a bistable toy model with a known edge state.
 - `test_regression.py`: two Newton iterations of every solution type (EQ, TW, PO, RPO), with fixed time steps and with CFL, plus Arnoldi stability, on a 32² grid. The results must equal `tests/data/regression_reference.npz` exactly.
 

@@ -135,12 +135,15 @@ class ECSSolver:
         return self._evaluate(xi)[0]
 
     def _derivative(self, name, x):
-        """Neutral direction of x associated with parameter `name`."""
+        """Derivative of the flow / shift of x with respect to parameter `name`: d/dt for Tp,
+        L d/dx for ax (the shift is x -> x + ax*Lx, so d/dax = Lx d/dx), likewise ay, az."""
         if name == 'Tp':
             return self.model.t_derivative(x, self.eps_t)
-        return {'ax': self.model.x_derivative,
-                'ay': self.model.y_derivative,
-                'az': self.model.z_derivative}[name](x)
+        bounds = self.model.bounds
+        derivative, L = {'ax': (self.model.x_derivative, bounds[0]),
+                         'ay': (self.model.y_derivative, bounds[1]),
+                         'az': (self.model.z_derivative, bounds[-1])}[name]
+        return L*derivative(x)
 
     def _jacobian(self, xi, phi_base):
         """Return matvec(v): the Newton Jacobian at xi acting on v = [dx, dTp, dax, ...]:

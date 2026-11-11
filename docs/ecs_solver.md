@@ -62,6 +62,28 @@ Each Newton step solves $J\,\delta\xi = -r$ with GMRES, using only matrix-free p
 
 Returns `(xi, success, residual, norm, properties)`: the final unknowns, whether `tol` was reached, the residual norm, $\lVert x\rVert$, and a dict of searched parameters plus the model's flow properties. Use `solver.unpack_xi(xi)` to get `(x, Tp, ax, ay, az)`.
 
+## Multiple shooting
+
+`MultiShootECSSolver(model, params)` (`ecs_core/multishoot.py`) finds periodic orbits and relative periodic orbits like `ECSSolver`, with the period split into $m$ segments (`'n_segments'`, default 2) of time $\tau = T_p/m$, each with its own initial state:
+
+$$\xi = [x_1, \dots, x_m, T_p, a_x, \dots],\qquad
+r_i = x_{i+1} - F^{\tau}(x_i)\ (i < m),\qquad r_m = x_1 - \sigma S(a) F^{\tau}(x_m),$$
+
+with the phase conditions of `ECSSolver` on $x_1$. It is a drop-in replacement: same `solve` arguments, same options, same output; $x_1$ is the saved solution and the stability is that of the full period. The initial segments are obtained by integrating `x0`.
+
+```python
+from ecs_core import MultiShootECSSolver
+solver = MultiShootECSSolver(model, {'n_segments': 4, 'tol': 1e-9, 'trust_radius': 20.0, 'odir': 'po_ms/'})
+xi, success, residual, norm, properties = solver.solve(x0=x0, Tsearch=True, Tp=Tp)
+```
+
+- **Cost.** One Jacobian-vector product integrates each segment once, one period in total, as in single shooting; in serial an iteration costs the same. The unknowns and the Krylov basis are $m$ times larger (`krylov_dim` vectors of $m N$ numbers).
+- **When it helps.** Perturbations grow over $\tau$ instead of $T_p$, so long or strongly unstable orbits are better conditioned: fewer GMRES vectors and a larger basin of convergence, e.g. from rough recurrences of a turbulent run. For short, mildly unstable orbits single shooting is as good.
+- **Residual and trust region.** The residual norm adds the mismatches of all $m$ segments, and `trust_radius` applies to the whole step $(dx_1, \dots, dx_m)$.
+- **Limitations.** Segments are integrated one after another (no parallelism over segments yet). With `Continuation`, predicted points are re-split by integrating $x_1$.
+
+With `n_segments=1` the solver is `ECSSolver` exactly (tested bit for bit on the regression cases).
+
 ## Imposed symmetries
 
 Restricting the search to a symmetry subspace removes neutral directions and usually speeds up convergence. Set `solver.sigma` before calling `solve`:

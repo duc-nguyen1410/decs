@@ -16,7 +16,7 @@ CASES = {
 ARNOLDI_CASES = ('EQ', 'PO')
 
 
-def run_cases():
+def run_cases(solver_cls=ECSSolver, extra_params=None):
     """Return {name: array}: the Newton unknowns xi after 2 iterations of every case
     ('<type>_cfl<0|1>') and the sorted Arnoldi multipliers ('<type>_cfl<0|1>_arnoldi')."""
     model = SaltFinger({'Ra': 1e5, 'Pr': 7.0, 'tau': 0.01, 'Rrho': 40.0, 'init_dt': 2e-4, 'ext': '.h5'},
@@ -30,7 +30,7 @@ def run_cases():
     for cfl in (False, True):
         model.use_CFL = cfl
         for name, kwargs in CASES.items():
-            solver = ECSSolver(model, {'max_iter': 2, 'tol': 1e-14, 'trust_radius': 1.0,
+            solver = solver_cls(model, {**(extra_params or {}), 'max_iter': 2, 'tol': 1e-14, 'trust_radius': 1.0,
                                        'krylov_dim': 6, 'krylov_dim_min': 6, 'odir': odir})
             xi = solver.solve(x0=x0.copy(), **kwargs)[0]
             key = f"{name}_cfl{int(cfl)}"
