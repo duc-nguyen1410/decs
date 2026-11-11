@@ -88,10 +88,10 @@ Run in parallel with MPI, e.g. `mpiexec -n 4 python3 find_eq.py`.
 | Traveling wave | `Rxsearch=True` and/or `Rzsearch=True`, initial shift `ax` / `az` | [find_tw.py](examples/find_tw.py) |
 | Periodic orbit | `Tsearch=True`, initial period `Tp` | [find_po.py](examples/find_po.py) |
 | Relative periodic orbit | `Tsearch=True` and a shift search, e.g. `Rxsearch=True` | [find_rpo.py](examples/find_rpo.py) |
-| PO / RPO by multiple shooting | `MultiShootECSSolver(model, {..., 'n_segments': m})`, same `solve` arguments, see [docs](docs/ecs_solver.md#multiple-shooting) | |
+| PO / RPO by multiple shooting | `MultiShootECSSolver(model, {..., 'n_segments': m})`, same `solve` arguments, see [docs](docs/ecs_solver.md#multiple-shooting) | [find_po_multishoot.py](examples/find_po_multishoot.py) |
 | Parameter continuation | `Continuation(solver, params).run_continuation(...)`; resume a stopped run with `restart_continuation(...)` | [continuation.py](examples/continuation.py) |
-| Poincaré section, recurrence search | `PoincareSection(model, observable, level).run(x0, T)`, `recurrence_search(...)`, see [docs](docs/ecs_solver.md#poincaré-sections-and-recurrence-search) | |
-| Edge tracking | `EdgeTracker(model, params).track(x_lam, x_turb, T_track)`, see [docs](docs/ecs_solver.md#edge-tracking) | |
+| Poincaré section, recurrence search | `PoincareSection(model, observable, level).run(x0, T)`, `recurrence_search(...)`, see [docs](docs/ecs_solver.md#poincaré-sections-and-recurrence-search) | [poincare_recurrence.py](examples/poincare_recurrence.py) |
+| Edge tracking | `EdgeTracker(model, params).track(x_lam, x_turb, T_track)`, see [docs](docs/ecs_solver.md#edge-tracking) | [edge_tracking.py](examples/edge_tracking.py) |
 | Direct simulation | Dedalus IVP solver of a model | [simulate.py](examples/simulate.py) |
 
 ### Practical notes
@@ -131,6 +131,7 @@ If a change is *meant* to alter the numerical results, check the new results, th
 
 - [Physical models](docs/models.md): governing equations and parameters
 - [ECS solver](docs/ecs_solver.md): Newton solver options, symmetries, stability (Arnoldi or eigenvalue problem), continuation and output files
+- [Finding periodic orbits from turbulence](docs/finding_po_rpo.md): Poincaré section, recurrence search, choosing the number of segments and the initial guess for PO / RPO
 - [New problems](docs/new_problem.md): adding your own model
 
 <!-- Please cite as :  -->

@@ -245,7 +245,7 @@ solver.solve(x0=crossings[r['i']]['x'], Tsearch=True, Rxsearch=True, Tp=r['Tp'],
 | `check_every` | `1` | test for a crossing every this many time steps |
 | `refine`, `tol`, `max_refine` | `True`, `1e-10`, `20` | refine crossings to $\lvert g - \text{level}\rvert \le$ `tol` $\cdot\max(\lvert\text{level}\rvert, \lvert\Delta g\rvert)$; `refine=False` interpolates linearly between the two steps |
 
-`run(x0, T, max_crossings=None, odir=None)` integrates up to `T` (or until `max_crossings`) and, with `odir`, writes `crossings.csv` (`i, t, g`) and the states `crossing_<i>`.
+`run(x0, T, max_crossings=None, odir=None)` integrates up to `T` (or until `max_crossings`) and returns the crossings as dicts `{'t', 'x', 'g'}`. With `odir` it also writes `crossings.csv`, with columns `i` (crossing index), `t` (time from the start of this `run`) and `g` (the observable at the crossing, equal to `level` to the tolerance), and the state of crossing `i` as `crossing_<i>` (format `ext`); an example file is explained in [Finding periodic orbits from turbulence](finding_po_rpo.md#output-files). The state at the end of the run is `section.final_state` (the model state itself has moved to the last crossing refinement). For the whole workflow from a turbulent run to converged orbits, see [Finding periodic orbits from turbulence](finding_po_rpo.md).
 
 `recurrence_search(model, states, times, shift_axes=(), T_min=0, T_max=inf, n_best=5)` returns the `n_best` pairs $j > i$ sorted by
 

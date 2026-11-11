@@ -82,3 +82,11 @@ def test_recurrence_search_finds_period():
     best = recurrence_search(model, [c['x'] for c in crossings], [c['t'] for c in crossings],
                              T_max=8.0, n_best=1)[0]
     assert best['Tp'] == pytest.approx(2*np.pi, abs=1e-6)
+
+
+def test_final_state_is_end_of_run_not_last_refinement():
+    model = ToyModel()
+    section = PoincareSection(model, y_coordinate)
+    section.run([1.0, -0.5], T=20.0)
+    assert np.array_equal(section.final_state, ToyModel().flow_map([1.0, -0.5], 20.0))
+    assert not np.array_equal(model.current_state(), section.final_state)   # refinement moved it

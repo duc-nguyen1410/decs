@@ -53,7 +53,8 @@ class PoincareSection:
     def run(self, x0, T, max_crossings=None, odir=None):
         """Integrate x0 over time T (stop after max_crossings) and return the crossings as a
         list of dicts {'t': time, 'x': state, 'g': observable}. With odir, also write
-        odir/crossings.csv and the states odir/crossing_<i>."""
+        odir/crossings.csv and the states odir/crossing_<i>. The state at the end of the run
+        (time T, or when max_crossings stopped it) is kept in self.final_state."""
         brackets = []                       # (t0, x0, g0, t1, x1, g1) around each crossing
         prev = {'t': 0.0, 'x': np.array(x0, dtype=float)}
         self.model.set_state(prev['x'])
@@ -68,7 +69,7 @@ class PoincareSection:
             prev.update(t=t, x=x, g=g)
             return max_crossings is not None and len(brackets) >= max_crossings
 
-        self.model.flow_map(x0, T, callback)
+        self.final_state = self.model.flow_map(x0, T, callback)   # before refining moves the state
         crossings = [self._locate(*b) for b in brackets]
         logger.info(f"Poincare section: {len(crossings)} crossings in t <= {T}")
         if odir is not None:
