@@ -220,6 +220,7 @@ class BoundedQuasiStaticMagnetoConvection(MagnetoConvection):
               'Pr': self.Pr_param, 'Q': self.Q_param,
               'ex': ex, 'ey': ey, 'ez': ez,
               'ux': self.u @ ex, 'w': self.u @ ez,
+              'uy': (self.u @ ey) if self.dim == 3 else None,
               'grad_u': grad_u, 'grad_te': grad_te,
               'lap_u': lap_u, 'lap_te': lap_te, 
               'dx': dx, 'dz': dz,
@@ -555,15 +556,18 @@ class BoundedQuasiStaticMagnetoConvection_SingleMode(MagnetoConvection_SingleMod
         self.ivp_problem = de.IVP(vars, namespace=ns)
         # Governing Equations
         ## momentum equation
-        self.ivp_problem.add_equation("dt(u) + i*kx*p - np.sqrt(Pr/Ra)*(dz(dz(u))-k2*u) - Q*np.sqrt(Pr/Ra)*Jy + lift1(tau_u1) + lift2(tau_u2) = - U0*i*kx*u - V0*i*ky*u - w*dz(U0)")
-        self.ivp_problem.add_equation("dt(v) + i*ky*p - np.sqrt(Pr/Ra)*(dz(dz(v))-k2*v) + Q*np.sqrt(Pr/Ra)*Jx + lift1(tau_v1) + lift2(tau_v2) = - U0*i*kx*v - V0*i*ky*v - w*dz(V0)")
-        self.ivp_problem.add_equation("dt(w) + dz(p) - np.sqrt(Pr/Ra)*(dz(dz(w))-k2*w) - te  + lift1(tau_w1) + lift2(tau_w2) = - U0*i*kx*w - V0*i*ky*w")
-        self.ivp_problem.add_equation("i*kx*u+i*ky*v+dz(w) + lift1(tau_p) = 0")
-        self.ivp_problem.add_equation("dt(U0) - np.sqrt(Pr/Ra)*dz(dz(U0)) - Q*np.sqrt(Pr/Ra)*Jy0 + lift1(tau_U01) + lift2(tau_U02) = -dz(conj(w)*u+w*conj(u))")
-        self.ivp_problem.add_equation("dt(V0) - np.sqrt(Pr/Ra)*dz(dz(V0)) + Q*np.sqrt(Pr/Ra)*Jx0 + lift1(tau_V01) + lift2(tau_V02) = -dz(conj(w)*v+w*conj(v))")
+        # First-order tau formulation (as in the full model): tau_*1 enters through the first
+        # derivative, tau_*2 through the equation, and continuity uses the same reduced dz(w).
+        # Lifting both taus directly into each equation (lift1 + lift2) made stress-free walls blow up.
+        self.ivp_problem.add_equation("dt(u) + i*kx*p - np.sqrt(Pr/Ra)*(dz(dz(u)+lift1(tau_u1))-k2*u) - Q*np.sqrt(Pr/Ra)*Jy + lift1(tau_u2) = - U0*i*kx*u - V0*i*ky*u - w*dz(U0)")
+        self.ivp_problem.add_equation("dt(v) + i*ky*p - np.sqrt(Pr/Ra)*(dz(dz(v)+lift1(tau_v1))-k2*v) + Q*np.sqrt(Pr/Ra)*Jx + lift1(tau_v2) = - U0*i*kx*v - V0*i*ky*v - w*dz(V0)")
+        self.ivp_problem.add_equation("dt(w) + dz(p) - np.sqrt(Pr/Ra)*(dz(dz(w)+lift1(tau_w1))-k2*w) - te  + lift1(tau_w2) = - U0*i*kx*w - V0*i*ky*w")
+        self.ivp_problem.add_equation("i*kx*u+i*ky*v+dz(w) + lift1(tau_w1) + tau_p = 0")
+        self.ivp_problem.add_equation("dt(U0) - np.sqrt(Pr/Ra)*dz(dz(U0)+lift1(tau_U01)) - Q*np.sqrt(Pr/Ra)*Jy0 + lift1(tau_U02) = -dz(conj(w)*u+w*conj(u))")
+        self.ivp_problem.add_equation("dt(V0) - np.sqrt(Pr/Ra)*dz(dz(V0)+lift1(tau_V01)) + Q*np.sqrt(Pr/Ra)*Jx0 + lift1(tau_V02) = -dz(conj(w)*v+w*conj(v))")
         ## temperature equation
-        self.ivp_problem.add_equation("dt(te) - (1.0/np.sqrt(Pr*Ra))*(dz(dz(te))-k2*te) - w + lift1(tau_te1) + lift2(tau_te2) = - U0*i*kx*te - V0*i*ky*te - w*dz(T0)")
-        self.ivp_problem.add_equation("dt(T0) - (1.0/np.sqrt(Pr*Ra))*dz(dz(T0)) + lift1(tau_T01) + lift2(tau_T02) = -dz(conj(w)*te+w*conj(te))")
+        self.ivp_problem.add_equation("dt(te) - (1.0/np.sqrt(Pr*Ra))*(dz(dz(te)+lift1(tau_te1))-k2*te) - w + lift1(tau_te2) = - U0*i*kx*te - V0*i*ky*te - w*dz(T0)")
+        self.ivp_problem.add_equation("dt(T0) - (1.0/np.sqrt(Pr*Ra))*dz(dz(T0)+lift1(tau_T01)) + lift1(tau_T02) = -dz(conj(w)*te+w*conj(te))")
         ##
         self.ivp_problem.add_equation("Jx + i*kx*Phi = v")
         self.ivp_problem.add_equation("Jy + i*ky*Phi = - u")
