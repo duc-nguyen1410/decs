@@ -106,3 +106,26 @@ def test_observable_in_callback_does_not_change_trajectory(model, states):
     observed = model.flow_map(x0, T, callback=lambda s: energies.append(model.cross_flow_energy()))
     assert len(energies) == 20
     assert np.array_equal(plain, observed)
+
+
+def test_current_state_matches_get_state_and_is_safe_in_callback(model, states):
+    x0, _ = states
+    plain = model.flow_map(x0, T)
+    snaps = []
+    observed = model.flow_map(x0, T, callback=lambda s: snaps.append(model.current_state()))
+    assert np.array_equal(plain, observed)
+    assert np.array_equal(snaps[-1], plain)
+
+
+@pytest.mark.parametrize('axes,shift', [(('x',), {'ax': 3/32}), (('z',), {'az': -5/32}),
+                                        (('z', 'x'), {'ax': -0.25, 'az': 0.125})])
+def test_shifted_distance_matches_solver_shift_convention(model, states, axes, shift):
+    """ECSSolver solves x0 = S(a) F(x0); shifted_distance(x, y) must return the a with
+    S(a) y = x, here for y = S(-a) x built with the model's own translation."""
+    from physics import Symmetry
+    from ecs_core.poincare import shifted_distance
+    x = model.flow_map(states[0], T)                 # smooth state
+    y = model.apply_symmetry(x, Symmetry(**{k: -v for k, v in shift.items()}))
+    d, found = shifted_distance(model, x, y, axes)
+    assert d < 1e-10
+    assert found == pytest.approx(shift, abs=1e-10)

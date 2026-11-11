@@ -54,6 +54,7 @@ ecs_core/                   ECS solver
   stability.py              Floquet stability analysis
   continuation.py           Continuation: natural / pseudo-arclength continuation
   edge.py                   EdgeTracker: edge tracking by bisection
+  poincare.py               PoincareSection, recurrence_search: initial guesses for PO / RPO
   output.py                 logs, CSV and parameter files
 examples/                   example scripts and example solutions
 tests/                      test suite (pytest), see Tests below
@@ -87,6 +88,7 @@ Run in parallel with MPI, e.g. `mpiexec -n 4 python3 find_eq.py`.
 | Periodic orbit | `Tsearch=True`, initial period `Tp` | [find_po.py](examples/find_po.py) |
 | Relative periodic orbit | `Tsearch=True` and a shift search, e.g. `Rxsearch=True` | [find_rpo.py](examples/find_rpo.py) |
 | Parameter continuation | `Continuation(solver, params).run_continuation(...)`; resume a stopped run with `restart_continuation(...)` | [continuation.py](examples/continuation.py) |
+| Poincaré section, recurrence search | `PoincareSection(model, observable, level).run(x0, T)`, `recurrence_search(...)`, see [docs](docs/ecs_solver.md#poincaré-sections-and-recurrence-search) | |
 | Edge tracking | `EdgeTracker(model, params).track(x_lam, x_turb, T_track)`, see [docs](docs/ecs_solver.md#edge-tracking) | |
 | Direct simulation | Dedalus IVP solver of a model | [simulate.py](examples/simulate.py) |
 
@@ -116,6 +118,7 @@ python -m pytest tests
 
 - `test_krylov.py`: GMRES, hookstep and trust region on small matrices.
 - `test_integration.py`: time integration (solver reuse, step callback, parameter changes, observables).
+- `test_poincare.py`: Poincaré crossings and recurrences of a toy limit cycle.
 - `test_edge.py`: edge tracking on a bistable toy model with a known edge state.
 - `test_regression.py`: two Newton iterations of every solution type (EQ, TW, PO, RPO), with fixed time steps and with CFL, plus Arnoldi stability, on a 32² grid. The results must equal `tests/data/regression_reference.npz` exactly.
 

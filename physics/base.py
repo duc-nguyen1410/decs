@@ -179,6 +179,11 @@ class FluidModel(StateIO, SymmetryOps):
             data_slices.append(gdata.ravel())
         return np.concatenate(data_slices)
     
+    def current_state(self):
+        """The current state vector like get_state(), but read from copies of the fields, so
+        it is safe inside a flow_map callback (get_state changes the solver's field layout)."""
+        return np.concatenate([self._grid_data(field.copy()).real.ravel() for field in self.fields])
+
     def set_state(self, state_vector):
         """
         Load a state vector to global grid data of each field

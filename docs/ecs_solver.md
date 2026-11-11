@@ -202,6 +202,35 @@ x_edge = tracker.track(x_lam, x_turb, T_track=200.0)
 
 Output in `odir`: `edge_history.csv` (`t, Ecf, L2norm` of the edge trajectory) and `edge_state` (latest edge state). A converged edge trajectory is a good initial guess for an edge state with `ECSSolver` (an equilibrium, traveling wave or periodic orbit with one unstable direction).
 
+## Poincaré sections and recurrence search
+
+`PoincareSection(model, observable, level, direction)` (`ecs_core/poincare.py`) records where a trajectory crosses $g(x) = $ `level`, with $g$ an observable of the current model state, counted only when $g$ increases (`direction=+1`), decreases (`-1`) or both (`0`). Each crossing is detected between two time steps and refined by regula falsi: integrate from the last state before the crossing until $g$ equals `level` to a relative `tol`. `recurrence_search` then compares the crossings pairwise to find near-returns, which give initial guesses for `ECSSolver`.
+
+```python
+from ecs_core import PoincareSection, recurrence_search
+section = PoincareSection(model, lambda m: m.cross_flow_energy(), level=E_mean, direction=1)
+crossings = section.run(x0, T=50.0, odir='section/')      # [{'t', 'x', 'g'}, ...]
+best = recurrence_search(model, [c['x'] for c in crossings], [c['t'] for c in crossings],
+                         shift_axes=('x',), T_max=5.0)       # RPO drifting in x
+r = best[0]
+solver.solve(x0=crossings[r['i']]['x'], Tsearch=True, Rxsearch=True, Tp=r['Tp'], ax=r['ax'])
+```
+
+| Argument | Default | Meaning |
+|---|---|---|
+| `observable` | required | `function(model) -> float` of the **current** state. It runs between time steps, so it must not change the layout of `model.fields`: evaluate on field copies, as `cross_flow_energy()` and `current_state()` do (`get_state()` is not safe there) |
+| `level`, `direction` | `0.0`, `+1` | the section $g = $ `level` and the crossing direction |
+| `check_every` | `1` | test for a crossing every this many time steps |
+| `refine`, `tol`, `max_refine` | `True`, `1e-10`, `20` | refine crossings to $\lvert g - \text{level}\rvert \le$ `tol` $\cdot\max(\lvert\text{level}\rvert, \lvert\Delta g\rvert)$; `refine=False` interpolates linearly between the two steps |
+
+`run(x0, T, max_crossings=None, odir=None)` integrates up to `T` (or until `max_crossings`) and, with `odir`, writes `crossings.csv` (`i, t, g`) and the states `crossing_<i>`.
+
+`recurrence_search(model, states, times, shift_axes=(), T_min=0, T_max=inf, n_best=5)` returns the `n_best` pairs $j > i$ sorted by
+
+$$d_{ij} = \min_{a} \frac{\lVert S(a)\,x_j - x_i\rVert}{\lVert x_i\rVert},\qquad S(a) f(x) = f(x + a L),$$
+
+as dicts with `i`, `j`, `Tp` $= t_j - t_i$, `distance` and the shifts (`ax`, `az`, ...). $S(a)$ is the shift convention of `ECSSolver`, so `Tp` and the shifts are its starting values directly. The minimum over shifts uses an FFT over the periodic `shift_axes`; the shift is refined between grid points by a parabola, while `distance` is that at the best grid shift. `shift_axes=()` compares without shifts (periodic orbits). Every multiple of a period is a recurrence too, so bound the search with `T_max`. A section of a symmetric orbit can be crossed several times per period (e.g. twice for PO3, whose Ecf has period $T_p/2$); the recurrence search still finds the true period. `shifted_distance(model, x, y, shift_axes)` gives the minimum for one pair.
+
 ## Output files
 
 In `odir` of a Newton solve:
