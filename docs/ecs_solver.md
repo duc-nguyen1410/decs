@@ -174,6 +174,34 @@ cont.restart_continuation(n_steps=200, mu_target=0.3)   # up to 200 more points
 
 After every accepted point the continuation writes `odir/continuation_state.json` (step size, branch history and folders). With this file the restart continues exactly as an uninterrupted run would. Runs made before this file existed are restarted from `odir/flow_properties.csv` instead, with the step size estimated from the last step, so they continue along the same branch with slightly different step sizes. At least three converged points are needed.
 
+## Edge tracking
+
+`EdgeTracker(model, params)` (`ecs_core/edge.py`) follows the edge of chaos, the boundary between the basins of attraction of the laminar state and of turbulence, by repeated bisection (Skufca, Yorke & Eckhardt 2006). States are classified by the cross-flow energy $E_{cf} = \tfrac12\langle w^2\rangle$ (`model.cross_flow_energy(x)`): a state is integrated until $E_{cf} < E_{lo}$ (laminar) or $E_{cf} > E_{hi}$ (turbulent).
+
+```python
+from ecs_core import EdgeTracker
+tracker = EdgeTracker(model, {'E_lo': 1e-8, 'E_hi': 1e-3, 'T_max': 50.0, 'dt_check': 1.0,
+                              'delta_max': 1e-2, 'bisect_tol': 1e-6, 'odir': 'edge/'})
+x_edge = tracker.track(x_lam, x_turb, T_track=200.0)
+```
+
+1. **Bisect** on the segment $x_a + \lambda(x_b - x_a)$ from a laminar state $x_a$ to a turbulent state $x_b$ until the bracket states are closer than `bisect_tol` (L2 norm `model.l2norm`).
+2. **Follow** both bracket states, checking every `dt_check`, until they are further apart than `delta_max` or one leaves $E_{lo} < E_{cf} < E_{hi}$.
+3. **Refine**: bisect again between the pair from the last check before that; repeat until time `T_track`.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `E_lo`, `E_hi` | required | $E_{cf}$ thresholds of the laminar / turbulent classification; the edge must lie between them |
+| `T_max` | required | longest integration to classify one state; still undecided states are classified by $E_{cf}$ against $\sqrt{E_{lo}E_{hi}}$, with a warning |
+| `dt_check` | required | time between separation checks while following the edge |
+| `delta_max` | required | separation (L2 norm) that triggers a new bisection |
+| `bisect_tol` | required | bracket width (L2 norm) at which a bisection stops, below `delta_max` |
+| `bisect_in` | `'l2'` | bisection midpoint in the L2 norm of the perturbation $x - x_a$ (`'l2'`) or in its cross-flow energy (`'ecf'`) |
+| `check_every` | `10` | classify every this many time steps |
+| `odir` | `'./edge/'` | output directory |
+
+Output in `odir`: `edge_history.csv` (`t, Ecf, L2norm` of the edge trajectory) and `edge_state` (latest edge state). A converged edge trajectory is a good initial guess for an edge state with `ECSSolver` (an equilibrium, traveling wave or periodic orbit with one unstable direction).
+
 ## Output files
 
 In `odir` of a Newton solve:

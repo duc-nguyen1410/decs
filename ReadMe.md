@@ -53,6 +53,7 @@ ecs_core/                   ECS solver
   krylov.py                 GMRES, hookstep and trust region (pure numpy)
   stability.py              Floquet stability analysis
   continuation.py           Continuation: natural / pseudo-arclength continuation
+  edge.py                   EdgeTracker: edge tracking by bisection
   output.py                 logs, CSV and parameter files
 examples/                   example scripts and example solutions
 tests/                      test suite (pytest), see Tests below
@@ -86,6 +87,7 @@ Run in parallel with MPI, e.g. `mpiexec -n 4 python3 find_eq.py`.
 | Periodic orbit | `Tsearch=True`, initial period `Tp` | [find_po.py](examples/find_po.py) |
 | Relative periodic orbit | `Tsearch=True` and a shift search, e.g. `Rxsearch=True` | [find_rpo.py](examples/find_rpo.py) |
 | Parameter continuation | `Continuation(solver, params).run_continuation(...)`; resume a stopped run with `restart_continuation(...)` | [continuation.py](examples/continuation.py) |
+| Edge tracking | `EdgeTracker(model, params).track(x_lam, x_turb, T_track)`, see [docs](docs/ecs_solver.md#edge-tracking) | |
 | Direct simulation | Dedalus IVP solver of a model | [simulate.py](examples/simulate.py) |
 
 ### Practical notes
@@ -114,6 +116,7 @@ python -m pytest tests
 
 - `test_krylov.py`: GMRES, hookstep and trust region on small matrices.
 - `test_integration.py`: time integration (solver reuse, step callback, parameter changes, observables).
+- `test_edge.py`: edge tracking on a bistable toy model with a known edge state.
 - `test_regression.py`: two Newton iterations of every solution type (EQ, TW, PO, RPO), with fixed time steps and with CFL, plus Arnoldi stability, on a 32² grid. The results must equal `tests/data/regression_reference.npz` exactly.
 
 If a change is *meant* to alter the numerical results, check the new results, then regenerate the reference with `python tests/make_reference.py` and commit it with the change. On another machine or Dedalus/FFTW build, rounding can differ slightly: run with `DECS_EXACT=0` to accept relative differences below 1e-6.

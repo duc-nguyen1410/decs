@@ -525,7 +525,9 @@ class FluidModel(StateIO, SymmetryOps):
     def flow_map(self, x0, Tp, callback=None):
         """Flow map: integrate x0 forward by Tp and return the final state.
         callback(solver) is called after every step; returning True stops early
-        (the state at that time is returned, solver.sim_time gives the time reached)."""
+        (the state at that time is returned, solver.sim_time gives the time reached).
+        A callback must not change the layout of self.fields (evaluate on field copies,
+        as cross_flow_energy does), or the next time step reads corrupted data."""
         gc.collect() # free unreachable objects in system
         self.comm.Barrier()
         solver = self._new_ivp_solver(x0, Tp, reuse=True)
@@ -617,3 +619,13 @@ class FluidModel(StateIO, SymmetryOps):
         self.set_state(x)
         u = self.fields[0]
         return 0.5*self._volume_average(u @ u)
+
+    def cross_flow_energy(self, x=None):
+        """Cross-flow energy Ecf = 1/2 <w^2>, w the velocity along the last coordinate (z).
+        x=None uses the current model state (e.g. inside a flow_map callback). It evaluates
+        on a copy of u: changing the layout of the solver's own fields between time steps
+        corrupts the integration."""
+        if x is not None:
+            self.set_state(x)
+        w = self.fields[0].copy() @ self.coords.unit_vector_fields(self.dist)[-1]
+        return 0.5*self._volume_average(w*w)

@@ -92,3 +92,17 @@ def test_observables(model):
     x = np.concatenate([u.ravel(), te.ravel(), sa.ravel()])
     assert model.kinetic_energy(x) == pytest.approx(0.25, rel=1e-12)
     assert model.l2norm(x) == pytest.approx(1.0, rel=1e-12)    # sqrt(1/2 + 1/2)
+    w = np.zeros((2,) + model.get_grid_shape())
+    w[1] = np.cos(2*np.pi*x_grid/Lx) + 0*z_grid                 # <w^2>/2 = 1/4
+    xw = np.concatenate([w.ravel(), te.ravel(), sa.ravel()])
+    assert model.cross_flow_energy(x) == pytest.approx(0.0, abs=1e-14)
+    assert model.cross_flow_energy(xw) == pytest.approx(0.25, rel=1e-12)
+
+
+def test_observable_in_callback_does_not_change_trajectory(model, states):
+    x0, _ = states
+    plain = model.flow_map(x0, T)
+    energies = []
+    observed = model.flow_map(x0, T, callback=lambda s: energies.append(model.cross_flow_energy()))
+    assert len(energies) == 20
+    assert np.array_equal(plain, observed)
