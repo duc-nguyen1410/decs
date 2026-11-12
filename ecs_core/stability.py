@@ -73,8 +73,9 @@ def stability(solver, xi, residual_tol=1e-6):
         'arnoldi' : Arnoldi iteration on the linearised flow map (any solution type);
         'evp'     : the model's eigenvalue problem (equilibria and traveling waves only).
     Saves stability/{eigenvalues,growthrate}.mtx (Floquet multipliers exp(lambda Tp) and
-    growth rates lambda, most unstable first), residual.mtx (Arnoldi Ritz residuals) and
-    unstable_mode_<i> in solver.odir. Skipped if xi is not converged."""
+    growth rates lambda, most unstable first), residual.mtx (Arnoldi Ritz residuals) and the
+    unstable modes in solver.odir/stability: unstable_mode_<i> (real part) and, for complex modes,
+    unstable_mode_<i>_imag. Skipped if xi is not converged."""
     model = solver.model
     comm = model.dist.comm
     if np.linalg.norm(solver.residual(xi)) >= residual_tol:
@@ -107,7 +108,10 @@ def stability(solver, xi, residual_tol=1e-6):
             modes = comm.bcast(eigenvectors[:, unstable] if comm.rank == 0 else None, root=0)
             for i, mode in enumerate(modes.T):
                 model.save_state(filename=os.path.join(out_dir, f'unstable_mode_{i}'),
-                                 state_vector=mode)
+                                 state_vector=mode.real)
+                if np.any(mode.imag):       # complex mode: save_state keeps real data only
+                    model.save_state(filename=os.path.join(out_dir, f'unstable_mode_{i}_imag'),
+                                     state_vector=mode.imag)
     finally:
         solver.sigma = original_symmetry
     logger.info('Done!')

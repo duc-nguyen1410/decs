@@ -18,7 +18,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from physics import SaltFinger
-from ecs_core import PoincareSection, recurrence_search, shifted_distance
+from tools import PoincareSection, recurrence_search, shifted_distance
 
 Tp = 0.07380265343504276
 model = SaltFinger(params={'Ra': 1e5, 'Pr': 7.0, 'tau': 0.01, 'Rrho': 40.0, 'init_dt': 1e-4, 'ext': '.nc'},

@@ -7,9 +7,10 @@
 /*.sym
 /debug*
 /_*
+/.*
 
 /temp
-/tools
+/tools/__pycache__
 
 /CI1_Lx0.6.h5
 /ecs_output
@@ -22,3 +23,4 @@
 /v0.001
 /thermo*
 /verify_code
+/CLAUDE.md

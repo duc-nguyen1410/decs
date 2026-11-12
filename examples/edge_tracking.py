@@ -21,7 +21,7 @@ import logging
 logger = logging.getLogger(__name__)
 import numpy as np
 from physics import ThermohalineShear
-from ecs_core import EdgeTracker
+from tools import EdgeTracker
 
 sizes = (128, 64)
 bounds = (2*np.pi, 1.0)

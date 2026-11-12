@@ -1,11 +1,11 @@
-"""PoincareSection and recurrence search (ecs_core/poincare.py).
+"""PoincareSection and recurrence search (tools/poincare.py).
 
 Toy: Hopf normal form dx/dt = x(1 - r^2) - y, dy/dt = y(1 - r^2) + x, a stable limit cycle
 r = 1 of period 2 pi. Section y = 0 with y increasing: crossings at (1, 0), 2 pi apart."""
 import numpy as np
 import pytest
 
-from ecs_core.poincare import PoincareSection, recurrence_search
+from tools.poincare import PoincareSection, recurrence_search
 
 
 class ToyModel:

@@ -17,7 +17,8 @@ import logging
 logger = logging.getLogger(__name__)
 import numpy as np
 from physics import SaltFinger
-from ecs_core import ECSSolver, PoincareSection, recurrence_search
+from ecs_core import ECSSolver
+from tools import PoincareSection, recurrence_search
 
 sizes = (128, 128)
 bounds = (0.8, 1.0)

@@ -1,11 +1,11 @@
-"""EdgeTracker (ecs_core/edge.py) on a cheap bistable toy model with a known edge state.
+"""EdgeTracker (tools/edge.py) on a cheap bistable toy model with a known edge state.
 
 Toy: dx/dt = -x (x - 1)(x - 3), dy/dt = -y. Laminar attractor (0, 0), turbulent attractor
 (3, 0), and the edge {x = 1} with the edge state (1, 0) of Ecf = x^2/2 = 0.5."""
 import numpy as np
 import pytest
 
-from ecs_core.edge import EdgeTracker
+from tools.edge import EdgeTracker
 
 
 class ToyModel:

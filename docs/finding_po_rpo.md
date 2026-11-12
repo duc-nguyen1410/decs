@@ -32,7 +32,8 @@ Turbulence wanders among unstable solutions and passes close to unstable periodi
 ```python
 import numpy as np
 from physics import SaltFinger
-from ecs_core import PoincareSection, recurrence_search, shifted_distance, ECSSolver, MultiShootECSSolver
+from ecs_core import ECSSolver, MultiShootECSSolver
+from tools import PoincareSection, recurrence_search, shifted_distance
 
 params = {'Ra': 1e5, 'Pr': 7.0, 'tau': 0.01, 'Rrho': 40.0, 'init_dt': 1e-4, 'ext': '.nc'}
 model = SaltFinger(params=params, sizes=(128, 128), bounds=(0.8, 1.0))
@@ -287,6 +288,8 @@ At 128², one period of PO3 ($T_p = 0.215$, $\Delta t = 3 \times 10^{-4}$) takes
 A chaotic DNS of `SaltFinger` (Ra = 1e5, Pr = 7, τ = 0.01, Rρ = 40, Lx = 0.6, 128²) with snapshots written every 0.1 for t = 0–335. It shows what such a search finds in practice, including what goes wrong. Newton has not yet been run on any of the candidates below, so none is a confirmed solution.
 
 **Check the run first.** Ecf grows by a factor 1.3 per snapshot from t ≈ 300.5 and is NaN from t = 303.5: a numerical blow-up. The analysis uses t = 20–298.
+
+The distances, recurrences, slow points and visits below come from the snapshot-series tools `lag_distances`, `recurrences`, `slow_points`, `reference_distances` and `nearest_solution` (see [Snapshot series](ecs_solver.md#snapshot-series-recurrences-slow-points-and-visits)).
 
 **Snapshots alone are too coarse for periodic orbits.** Consecutive snapshots differ by 25–90 % in norm, so a stored-snapshot recurrence cannot get much closer than that, and the long leave-and-return recurrences that the search does find (Tp = 2–5) all start and end in the same region with random shifts: excursions, not orbits. Periodic orbits need the section to be run at every time step (step 3) on re-runs of chosen windows.
 

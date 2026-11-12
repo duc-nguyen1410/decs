@@ -102,6 +102,10 @@ A `.sym` file holds one line `s sx sy sz ax ay az` for $u(x,y,z) \to s\,u(s_x x 
 
 Reflections flip the sign of the matching velocity component; a $z$-reflection also flips the sign of scalar fields. The global parity `s` is stored but not currently applied.
 
+### Finding the symmetry of a solution
+
+`find_symmetries(model, x)` ([symmetry_search.py](../tools/symmetry_search.py)) tests every combination of reflections and, for each, finds the shift $a$ minimising $\|S(a) R x - x\| / \|x\|$ (FFT cross-correlation on the grid, then Newton refinement). Pure translations are tested for half-domain shifts only. It returns all candidates sorted by distance, each with a `Symmetry` in the convention of `solver.sigma` and a `center` shift: moving the state by `center` (`model.apply_symmetry(x, Symmetry(**center))`) removes the shift along the reflected directions, so standard `.sym` files such as `symmetry_pixz.sym` apply. [find_symmetry.py](../examples/find_symmetry.py) prints the table, writes the best symmetry to `<state>_best.sym` and optionally saves the centered state. For example, TM1 gives $x \to -x$ and the shift $(L_x/2, L_z/2)$ (distances $\sim 10^{-13}$); WF, PO3 and RPO2 give $(x, z) \to (-x, -z)$ about some point. Only symmetries of the single state $x$ are found: a periodic orbit whose symmetry maps $x(t)$ to $x(t + T_p/2)$ needs $x$ compared with a later state instead.
+
 ## Stability analysis
 
 With `computeStability=True`, a converged solution is analysed automatically (or call `solver.stability(xi)` yourself). The analysis is skipped unless the residual is below `1e-6`, and the imposed symmetry is not applied to perturbations. Two methods are available (`stability_method`); both write growth rates $\lambda$ and multipliers $\mu = e^{\lambda T}$ sorted from most unstable, plus the unstable modes.
@@ -158,6 +162,26 @@ The EVP evaluates the nonlinear terms as exact spectral products with the base s
 
 A shift mode noticeably away from 0 indicates an under-resolved base state. The coupled EVP is practical up to roughly 48²–64² in 2-D; at higher resolution use Arnoldi, and the EVP on the base state interpolated to 48² as a cross-check.
 
+### New branches from unstable modes
+
+An unstable mode $v$ of a converged solution $x$ points to the solutions created where its eigenvalue crossed zero: steady bifurcations (real $\lambda$) give new equilibria (traveling waves for a traveling-wave base), Hopf bifurcations ($\lambda = \mu \pm i\omega$) periodic orbits with $T_p \approx 2\pi/\omega$ (relative periodic orbits). [branches.py](../tools/branches.py) builds the guesses and runs Newton from them, for any model:
+
+```python
+from tools import load_unstable_modes, branch_guesses, unstable_manifold_guesses, search_branches
+modes = load_unstable_modes(model, 'EQ/stability')                   # [(lambda, v)], v complex
+guesses = branch_guesses(model, x, modes, eps=(1e-2, 1e-1), n_phases=4, odir='branches/')
+guesses += unstable_manifold_guesses(model, x, modes, eps=1e-3, T=1.0)  # optional, see below
+results = search_branches(solver, x, guesses, odir='branches/')        # branches/branches.csv
+```
+
+- **Guesses** are $x + \varepsilon\lVert x\rVert\, w/\lVert w\rVert$ with $w = \mathrm{Re}(v e^{i\phi})$: both signs for a real mode, `n_phases` phases for a complex one. Each guess records its `kind` (`eq`, `tw`, `po`, `rpo`), `Tp` and the symmetries of $x$ the perturbation keeps and breaks (`keeps`, `breaks`, from `find_symmetries`). Imposing a kept symmetry in Newton (`solver.sigma`) removes neutral directions; a broken reflection allows a drift along the reflected direction: search the shift as well, e.g. `solve_kwargs={'eq': dict(Tp=0.2, Rxsearch=True)}`.
+- **Near the bifurcation** (small $\lambda$) the new branch is close to $x$ and Newton from these guesses reaches it. Far from it, follow the unstable manifold instead: `unstable_manifold_guesses` integrates $x + \varepsilon w$ for a time `T` and returns the slowest states of each trajectory, after it has left $x$ (a drift there makes it a `tw` guess with that drift as the starting shift).
+- **`search_branches`** runs `solver.solve` from every guess in `odir/guess_<k>/` (solve arguments by kind, overridable with `solve_kwargs`) and labels each converged result `original` (within `new_tol` of $x$ up to shifts and reflections, `symmetry_distance`), `new`, or `same as <k>`.
+- **Complex modes need both parts.** The stability analysis saves the imaginary part of a complex mode as `unstable_mode_<i>_imag`; runs from before that only have the real part, so their phases reduce to $\pm\mathrm{Re}\,v$. The older `eigen_unstable.h5` files (complex, on the dealiased grid) are read too.
+- **Modes from `projectNeutralDrift=True` lack their shift component**: Arnoldi then works with the translation directions $\partial_x x, \partial_z x$ projected out, so a saved mode is the true eigenvector minus its (non-growing) shift part. Checked on WF at 48²: $x + \varepsilon w$ evolves as $\mathrm{Re}(v e^{\lambda t})$ plus a constant shift to $10^{-5}$ (steady mode) and $4\times10^{-3}$ (Hopf mode), but without the shift directions the Hopf mode leaves 96 % of the deviation unexplained. For guesses this is harmless (the missing part only shifts the guess); a large shift part, as in WF's Hopf mode (z), means the bifurcating solution may drift in that direction.
+
+Example: [find_branches.py](../examples/find_branches.py) on WF (one steady mode, $\lambda = 5.39$, which breaks WF's point reflection; one Hopf pair, $\lambda = 0.82 \pm 9.87i$, $T_p \approx 0.64$).
+
 ## Parameter continuation
 
 ```python
@@ -198,10 +222,10 @@ After every accepted point the continuation writes `odir/continuation_state.json
 
 ## Edge tracking
 
-`EdgeTracker(model, params)` (`ecs_core/edge.py`) follows the edge of chaos, the boundary between the basins of attraction of the laminar state and of turbulence, by repeated bisection (Skufca, Yorke & Eckhardt 2006). States are classified by the cross-flow energy $E_{cf} = \tfrac12\langle w^2\rangle$ (`model.cross_flow_energy(x)`): a state is integrated until $E_{cf} < E_{lo}$ (laminar) or $E_{cf} > E_{hi}$ (turbulent).
+`EdgeTracker(model, params)` (`tools/edge.py`) follows the edge of chaos, the boundary between the basins of attraction of the laminar state and of turbulence, by repeated bisection (Skufca, Yorke & Eckhardt 2006). States are classified by the cross-flow energy $E_{cf} = \tfrac12\langle w^2\rangle$ (`model.cross_flow_energy(x)`): a state is integrated until $E_{cf} < E_{lo}$ (laminar) or $E_{cf} > E_{hi}$ (turbulent).
 
 ```python
-from ecs_core import EdgeTracker
+from tools import EdgeTracker
 tracker = EdgeTracker(model, {'E_lo': 1e-8, 'E_hi': 1e-3, 'T_max': 50.0, 'dt_check': 1.0,
                               'delta_max': 1e-2, 'bisect_tol': 1e-6, 'odir': 'edge/'})
 x_edge = tracker.track(x_lam, x_turb, T_track=200.0)
@@ -226,10 +250,10 @@ Output in `odir`: `edge_history.csv` (`t, Ecf, L2norm` of the edge trajectory) a
 
 ## Poincaré sections and recurrence search
 
-`PoincareSection(model, observable, level, direction)` (`ecs_core/poincare.py`) records where a trajectory crosses $g(x) = $ `level`, with $g$ an observable of the current model state, counted only when $g$ increases (`direction=+1`), decreases (`-1`) or both (`0`). Each crossing is detected between two time steps and refined by regula falsi: integrate from the last state before the crossing until $g$ equals `level` to a relative `tol`. `recurrence_search` then compares the crossings pairwise to find near-returns, which give initial guesses for `ECSSolver`.
+`PoincareSection(model, observable, level, direction)` (`tools/poincare.py`) records where a trajectory crosses $g(x) = $ `level`, with $g$ an observable of the current model state, counted only when $g$ increases (`direction=+1`), decreases (`-1`) or both (`0`). Each crossing is detected between two time steps and refined by regula falsi: integrate from the last state before the crossing until $g$ equals `level` to a relative `tol`. `recurrence_search` then compares the crossings pairwise to find near-returns, which give initial guesses for `ECSSolver`.
 
 ```python
-from ecs_core import PoincareSection, recurrence_search
+from tools import PoincareSection, recurrence_search
 section = PoincareSection(model, lambda m: m.cross_flow_energy(), level=E_mean, direction=1)
 crossings = section.run(x0, T=50.0, odir='section/')      # [{'t', 'x', 'g'}, ...]
 best = recurrence_search(model, [c['x'] for c in crossings], [c['t'] for c in crossings],
@@ -253,6 +277,35 @@ $$d_{ij} = \min_{a} \frac{\lVert S(a)\,x_j - x_i\rVert}{\lVert x_i\rVert},\qquad
 
 as dicts with `i`, `j`, `Tp` $= t_j - t_i$, `distance` and the shifts (`ax`, `az`, ...). $S(a)$ is the shift convention of `ECSSolver`, so `Tp` and the shifts are its starting values directly. The minimum over shifts uses an FFT over the periodic `shift_axes`; the shift is refined between grid points by a parabola, while `distance` is that at the best grid shift. `shift_axes=()` compares without shifts (periodic orbits). Every multiple of a period is a recurrence too, so bound the search with `T_max`. A section of a symmetric orbit can be crossed several times per period (e.g. twice for PO3, whose Ecf has period $T_p/2$); the recurrence search still finds the true period. `shifted_distance(model, x, y, shift_axes)` gives the minimum for one pair.
 
+## Snapshot series: recurrences, slow points and visits
+
+A simulation that writes snapshots (`model.set_snapshots`, as in [simulate.py](../examples/simulate.py)) gives guesses without re-running it: all snapshots are compared at once with batched FFTs ([timeseries.py](../tools/timeseries.py)), so thousands of snapshots take minutes, where the pairwise `recurrence_search` is meant for tens of section crossings. Example: [snapshot_analysis.py](../examples/snapshot_analysis.py) finds the period and shift of RPO2 from its own snapshots.
+
+```python
+from tools import load_snapshots, lag_distances, recurrences, slow_points, reference_distances, reflections
+T, X = load_snapshots(model, 'run/snapshots', (20, 300))       # X[i].ravel() is a state vector
+dist, shifts = lag_distances(model, X, max_lag=50, shift_axes=('x', 'z'))
+returns = recurrences(T, dist, shifts, leave=0.5)              # [{'t', 'Tp', 'ax', 'az', 'distance', ...}]
+slow = slow_points(T, dist, shifts)                            # [{'t', 'speed', 'ax', 'az', ...}]
+d = reference_distances(model, X, [model.apply_symmetry(x_sol, s) for s in reflections(model)], ('x', 'z'))
+```
+
+| Function | Returns |
+|---|---|
+| `load_snapshots(model, folder, t_range, dtype=float32)` | times and states of the files `<name>_s<k>.h5` in `folder` (numeric order), the tasks named after `model.fields`; `load_snapshot(model, folder, t, tol)` gives the state vector nearest to `t` |
+| `lag_distances(model, X, max_lag, shift_axes)` | `dist[i, L]` $= \min_a \lVert S(a)\,x_{i+L} - x_i\rVert / \lVert x_i\rVert$ and the shifts, in the `ECSSolver` convention |
+| `recurrences(T, dist, shifts, leave, n_best, exclude)` | returns: lags where `dist` has a local minimum after it first rose above `leave` (so neighbouring snapshots and slow passages do not count), best first, at least `exclude = (di, dL)` apart; `Tp` and the shifts are starting values for `solve` |
+| `slow_points(T, dist, shifts, n, min_separation)` | the snapshots that change least per snapshot interval (drift removed): equilibrium guesses, or travelling waves with speed shift $\cdot L/\Delta t$ |
+| `reference_distances(model, X, refs, shift_axes)` | distance of every snapshot to the nearest of the states `refs` (e.g. a solution and its reflections): when the flow visits it |
+
+The minimum over shifts is refined between grid points (Newton on the Fourier series of the correlation): a grid shift alone would leave a floor of order (grid spacing) × gradient, about $3	imes10^{-2}$ for WF at 128². Distances are accurate to the square root of round-off, since $\lVert x - y\rVert^2$ is computed as $\lVert x\rVert^2 + \lVert y\rVert^2 - 2C$: about $10^{-4}$ (relative) with the default float32 states, $10^{-8}$ with `dtype=np.float64`; the period is known only to within a snapshot interval, which Newton refines. Every multiple of a period recurs too, so bound `max_lag`. To compare one state with known solutions up to reflections and shifts, use `symmetry_distance(model, x, y)` or `nearest_solution(model, x, catalogue)` ([symmetry_search.py](../tools/symmetry_search.py)).
+
+### Approach to and escape from an equilibrium
+
+Near an equilibrium the dynamics are linear, so the distance of a passing trajectory, plotted on a log scale, follows straight lines $e^{\lambda t}$: in along the weakest stable eigenvalue, out along the leading unstable one (as in Zheng, Tuckerman & Schneider, Fig. 7b, for a periodic orbit near a homoclinic bifurcation). [approach_escape.py](../examples/approach_escape.py) integrates a state with fine sampling, takes the distance to the equilibrium up to shifts and reflections (`reference_distances` with `reflections(model)`; with plain distances a pass near a shifted copy shows no straight lines), fits the slopes with `exponential_rate(T, D, (t0, t1))` and plots them against the eigenvalues from `stability/growthrate.mtx`; [approach_escape_snapshots.py](../examples/approach_escape_snapshots.py) does the same on stored snapshots.
+
+On the Lx = 0.6 DNS passing within 0.054 of WF (`Lx0.6_WF/dns_t100.5`), the escape follows WF's leading eigenvalue 5.39 only roughly (fit 6.7): at distances 0.1–0.3 the dynamics are already nonlinear, and the approach (from distance 1) is nonlinear throughout. With the deviation from WF shrunk 1000 times (`scale = 1e-3`) the escape fits 5.33 over three decades. Slopes test the eigen-directions only where the distance is small: check by shrinking the deviation, or by fitting the lowest part of the curve. Complex eigenvalues add oscillations around the line (compare with the real part).
+
 ## Output files
 
 In `odir` of a Newton solve:
@@ -266,7 +319,7 @@ In `odir` of a Newton solve:
 | `tol.txt` | current residual |
 | `snapshots/`, `flowproperties/`, `meanprofiles/` | time history of a converged TW / PO / RPO, if `model.save_snapshots` etc. are on |
 | `stability/eigenvalues.mtx`, `growthrate.mtx`, `residual.mtx` | Floquet multipliers, growth rates, Ritz residuals (Matrix Market) |
-| `stability/unstable_mode_<i>.<ext>` | unstable eigenmodes |
+| `stability/unstable_mode_<i>.<ext>` | unstable eigenmodes (real part; `unstable_mode_<i>_imag` holds the imaginary part of a complex mode) |
 
 Each Newton solve starts a new `flow_properties.csv` and `output.log` in its `odir`.
 

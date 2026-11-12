@@ -123,9 +123,57 @@ def test_shifted_distance_matches_solver_shift_convention(model, states, axes, s
     """ECSSolver solves x0 = S(a) F(x0); shifted_distance(x, y) must return the a with
     S(a) y = x, here for y = S(-a) x built with the model's own translation."""
     from physics import Symmetry
-    from ecs_core.poincare import shifted_distance
+    from tools.poincare import shifted_distance
     x = model.flow_map(states[0], T)                 # smooth state
     y = model.apply_symmetry(x, Symmetry(**{k: -v for k, v in shift.items()}))
     d, found = shifted_distance(model, x, y, axes)
     assert d < 1e-10
     assert found == pytest.approx(shift, abs=1e-10)
+
+
+def test_find_symmetries_recovers_imposed_symmetry(model, states):
+    """A state made symmetric under a shifted x-z reflection: find_symmetries must return that
+    symmetry first, and the centering shift must remove its shifts."""
+    from physics import Symmetry
+    from tools import find_symmetries
+    sigma = Symmetry(sx=-1, sz=-1, ax=0.3, az=-0.15)   # involution: sigma(sigma(x)) = x
+    x = model.flow_map(states[0], T)                   # smooth state
+    x = 0.5*(x + model.apply_symmetry(x, sigma))
+    best = find_symmetries(model, x)[0]
+    assert best['distance'] < 1e-12
+    s = best['symmetry']
+    assert (s.sx, s.sy, s.sz) == (-1, 1, -1)
+    assert (s.ax, s.az) == pytest.approx((0.3, -0.15), abs=1e-12)
+    x_c = model.apply_symmetry(x, Symmetry(**best['center']))
+    centered = model.apply_symmetry(x_c, Symmetry(sx=-1, sz=-1))
+    assert np.linalg.norm(centered - x_c) < 1e-12*np.linalg.norm(x_c)
+
+
+def test_change_grid_round_trip_and_values(model, states):
+    """Spectral interpolation 32^2 -> 48x40 (other Lx) -> 32^2 returns the state, and on the
+    finer grid it equals the old state at the shared grid points."""
+    from tools import change_grid
+    x = model.flow_map(states[0], T)                   # smooth state
+    fine = SaltFinger(PARAMS, sizes=(64, 48), bounds=(0.6, 1.0))
+    x_fine = change_grid(model, fine)
+    blocks, blocks_fine = x.reshape(-1, 32, 32), x_fine.reshape(-1, 64, 48)
+    assert np.allclose(blocks_fine[:, ::2, ::3][:, :, :16], blocks[:, :, ::2][:, :, :16],
+                       rtol=0, atol=1e-10*np.abs(x).max())
+    back = change_grid(fine, model)
+    assert np.linalg.norm(back - x) < 1e-12*np.linalg.norm(x)
+    stretched = SaltFinger(PARAMS, sizes=(32, 32), bounds=(0.8, 1.0))   # new Lx: same grid values
+    assert np.linalg.norm(change_grid(model, stretched) - x) < 1e-13*np.linalg.norm(x)
+
+
+def test_change_grid_2d_to_3d(model, states):
+    """A 2-D state on a 3-D grid is y-independent with v = 0."""
+    from tools import change_grid
+    x = model.flow_map(states[0], T)
+    model3 = SaltFinger(PARAMS, sizes=(32, 4, 32), bounds=(0.6, 0.3, 1.0))
+    x3 = change_grid(model, model3)
+    u, rest = x3[:3*32*4*32].reshape(3, 32, 4, 32), x3[3*32*4*32:].reshape(-1, 32, 4, 32)
+    u2, rest2 = x[:2*32*32].reshape(2, 32, 32), x[2*32*32:].reshape(-1, 32, 32)
+    assert np.abs(u[1]).max() == 0
+    for j in range(4):
+        assert np.allclose(u[[0, 2], :, j], u2, rtol=0, atol=1e-13)
+        assert np.allclose(rest[:, :, j], rest2, rtol=0, atol=1e-13)
