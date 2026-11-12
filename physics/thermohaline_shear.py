@@ -157,8 +157,7 @@ class ThermohalineShear(DoubleDiffusion):
         z, = self.dist.local_grids(self.bases[-1])
         dz = lambda A: de.Differentiate(A, self.coords['z']) 
         baru = self.dist.Field(bases=self.bases[-1])
-        A_s = np.sqrt((Lambda-1.0)/Ri)
-        baru['g'] = A_s*np.sin(2*np.pi*z)
+        baru['g'] = np.sin(2*np.pi*z) # background shear of the IVP (unit amplitude)
         Ft = de.Average(w*self.te)
         Fs = de.Average(w*self.sa)
         # Nusselt and Sherwood numbers 
@@ -168,7 +167,8 @@ class ThermohalineShear(DoubleDiffusion):
         # D = D_base + D_fluc
         # D_base = np.sqrt(Pr/Ra) * 2 * (np.pi**2) * (A_s**2)
         # save D_fluc
-        D = Pr/Pe * de.Average(de.dot(grad_u @ ex, grad_u @ ex) + de.dot(grad_u @ ez, grad_u @ ez)) # Viscous dissipation, TODO: complete 3D calculation
+        grad_u2 = sum(de.dot(grad_u @ e, grad_u @ e) for e in self.coords.unit_vector_fields(self.dist)) # |grad u|^2, all components
+        D = Pr/Pe * de.Average(grad_u2) # Viscous dissipation
         I = (4*(np.pi**2)*Ri)/(Lambda-1)*de.Average((self.te-self.sa)*w) # kinetic energy input by bouyancy
         I_t = (4*(np.pi**2)*Ri)/(Lambda-1)*de.Average(self.te*w) # kinetic energy input by temperature-induced bouyancy
         I_s = -(4*(np.pi**2)*Ri)/(Lambda-1)*de.Average(self.sa*w) # kinetic energy input by salinity-induced bouyancy
@@ -217,8 +217,7 @@ class ThermohalineShear(DoubleDiffusion):
         Lz = self.bases[-1].bounds[1]
         dz = lambda A: de.Differentiate(A, self.coords['z']) 
         baru = self.dist.Field(bases=self.bases[-1])
-        A_s = np.sqrt((Lambda-1.0)/Ri)
-        baru['g'] = A_s*np.sin(2*np.pi*z)
+        baru['g'] = np.sin(2*np.pi*z) # background shear of the IVP (unit amplitude)
 
         flowproperties = solver.evaluator.add_file_handler(self.odir+'flowproperties', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
         flowproperties.add_task(1+Pe*de.Average(w*self.te), name='Nu') # Nusselt number
@@ -227,7 +226,8 @@ class ThermohalineShear(DoubleDiffusion):
         # D = D_base + D_fluc
         # D_base = np.sqrt(Pr/Ra) * 2 * (np.pi**2) * (A_s**2)
         # save D_fluc
-        flowproperties.add_task(Pr/Pe * de.Average(de.dot(grad_u @ ex, grad_u @ ex) + de.dot(grad_u @ ez, grad_u @ ez)), name='D') # Viscous dissipation
+        grad_u2 = sum(de.dot(grad_u @ e, grad_u @ e) for e in self.coords.unit_vector_fields(self.dist)) # |grad u|^2, all components
+        flowproperties.add_task(Pr/Pe * de.Average(grad_u2), name='D') # Viscous dissipation
         flowproperties.add_task(de.Average(-ux * w * dz(baru)), name='I_shear') # kinetic energy input by background shear
         flowproperties.add_task((4*(np.pi**2)*Ri)/(Lambda-1)*de.Average((self.te-self.sa)*w), name='I') # kinetic energy input by bouyancy
         flowproperties.add_task((4*(np.pi**2)*Ri)/(Lambda-1)*de.Average(self.te*w), name='I_t') # kinetic energy input by temperature-induced bouyancy

@@ -94,7 +94,6 @@ class SaltFinger(DoubleDiffusion):
         return evp
 
     def get_flow_properties(self):
-        ex = self.coords.unit_vector_fields(self.dist)[0]
         ez = self.coords.unit_vector_fields(self.dist)[-1]
         w = self.u @ ez
         Ra = self.params['Ra']
@@ -108,7 +107,8 @@ class SaltFinger(DoubleDiffusion):
         Sh = 1 - de.Average(w*self.sa)/tau
         # Energy
         grad_u = de.grad(self.u)
-        D = de.Average(Pr*(de.dot(grad_u @ ex, grad_u @ ex) + de.dot(grad_u @ ez, grad_u @ ez))) # Viscous dissipation
+        grad_u2 = sum(de.dot(grad_u @ e, grad_u @ e) for e in self.coords.unit_vector_fields(self.dist)) # |grad u|^2, all components
+        D = de.Average(Pr*grad_u2) # Viscous dissipation
         I = de.Average(Pr*Ra*(self.te-self.sa/Rrho)*w) # kinetic energy input by bouyancy
         I_t = de.Average(Pr*Ra*self.te*w) # kinetic energy input by temperature-induced bouyancy
         I_s = de.Average(-Pr*Ra*self.sa*w/Rrho) # kinetic energy input by salinity-induced bouyancy
@@ -143,7 +143,6 @@ class SaltFinger(DoubleDiffusion):
         snapshots.add_task(self.u, name='u')
         
     def set_flowproperties(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
-        ex = self.coords.unit_vector_fields(self.dist)[0]
         ez = self.coords.unit_vector_fields(self.dist)[-1]
         w = self.u @ ez
         Ra = self.params['Ra']
@@ -154,7 +153,8 @@ class SaltFinger(DoubleDiffusion):
         flowproperties.add_task(1 - de.Average(w*self.te), name='Nu') # Nusselt number
         flowproperties.add_task(1 - de.Average(w*self.sa)/tau, name='Sh') # Sherwood number
         grad_u = de.grad(self.u)
-        flowproperties.add_task(de.Average(Pr*(de.dot(grad_u @ ex, grad_u @ ex) + de.dot(grad_u @ ez, grad_u @ ez))), name='D') # Viscous dissipation
+        grad_u2 = sum(de.dot(grad_u @ e, grad_u @ e) for e in self.coords.unit_vector_fields(self.dist)) # |grad u|^2, all components
+        flowproperties.add_task(de.Average(Pr*grad_u2), name='D') # Viscous dissipation
         flowproperties.add_task(de.Average(Pr*Ra*(self.te-self.sa/Rrho)*w), name='I') # kinetic energy input by bouyancy
         flowproperties.add_task(de.Average(Pr*Ra*self.te*w), name='I_t') # kinetic energy input by temperature-induced bouyancy
         flowproperties.add_task(de.Average(-Pr*Ra*self.sa*w/Rrho), name='I_s') # kinetic energy input by salinity-induced bouyancy

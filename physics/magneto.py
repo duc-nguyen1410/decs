@@ -290,7 +290,8 @@ class BoundedQuasiStaticMagnetoConvection(MagnetoConvection):
         L2_temp = np.sqrt(de.Average(self.te**2))
         # [3] 
         grad_u = de.grad(self.u)
-        D = de.Average(np.sqrt(Pr/Ra)*(de.dot(grad_u @ ex, grad_u @ ex) + de.dot(grad_u @ ez, grad_u @ ez))) # Viscous dissipation
+        grad_u2 = sum(de.dot(grad_u @ e, grad_u @ e) for e in self.coords.unit_vector_fields(self.dist)) # |grad u|^2, all components
+        D = de.Average(np.sqrt(Pr/Ra)*grad_u2) # Viscous dissipation
         I = de.Average(self.te*w) # kinetic energy input by temperature-induced bouyancy
         if self.dim == 2:
             # J = -ux*ey
@@ -303,7 +304,7 @@ class BoundedQuasiStaticMagnetoConvection(MagnetoConvection):
             # J is a 3D Vector
             J = - grad_Phi + de.cross(self.u, ez) # quasi-static MHD Ohm’s law
             Lorentz_force = de.cross(J, ez)
-            I_j = de.Average(Q*np.sqrt(Pr/Ra)*de.dot(Lorentz_force*self.u))
+            I_j = de.Average(Q*np.sqrt(Pr/Ra)*de.dot(Lorentz_force, self.u))
         # .evaluate() returns a field object
         # ['g'] accesses the grid data
         Nu_p_val = Nu_p.evaluate()['g'].real
@@ -346,7 +347,8 @@ class BoundedQuasiStaticMagnetoConvection(MagnetoConvection):
         flowproperties = solver.evaluator.add_file_handler(self.odir+'flowproperties', sim_dt=sim_dt, max_writes=max_writes, mode=mode)
         flowproperties.add_task(1-h_mean(dz(self.te))(z=0), name='Nu') # Nusselt number
         grad_u = de.grad(self.u)
-        flowproperties.add_task(np.sum(de.Average(np.sqrt(Pr/Ra)*(de.dot(grad_u @ ex, grad_u @ ex) + de.dot(grad_u @ ez, grad_u @ ez)))), name='D') # Viscous dissipation
+        grad_u2 = sum(de.dot(grad_u @ e, grad_u @ e) for e in self.coords.unit_vector_fields(self.dist)) # |grad u|^2, all components
+        flowproperties.add_task(de.Average(np.sqrt(Pr/Ra)*grad_u2), name='D') # Viscous dissipation
         flowproperties.add_task(de.Average(self.te*w), name='I') # kinetic energy input by bouyancy
 
     def set_meanprofiles(self, solver, sim_dt=1.0, max_writes=1000, mode='overwrite'):
