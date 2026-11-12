@@ -128,6 +128,7 @@ class MagnetoConvection(FluidModel):
     
     def preview(self, field_idx=-1):
         """ Preview the current state using last field of the system. """
+        self.fields[field_idx].change_scales(self.dealias) # same grid as the axes below
         data_g = self.fields[field_idx].allgather_data('g').real
         if self.dist.comm.rank == 0:
             xaxis = self.bases[0].global_grid(self.dist, scale=self.dealias)
@@ -467,26 +468,28 @@ class MagnetoConvection_SingleMode(FluidModel):
                        self.te, self.T0] # for ECS
         
     def preview(self):
-        """ Preview the current state using last field of the system. """
+        """ Preview the temperature over one wavelength along the wavevector (kx, ky). """
+        # gather on the same (dealiased) grid as zaxis; keep te complex (its phase matters)
+        self.T0.change_scales(self.dealias)
+        self.te.change_scales(self.dealias)
         T0_g = self.T0.allgather_data('g').real
-        te_g = self.te.allgather_data('g').real
+        te_g = self.te.allgather_data('g')
         if self.dist.comm.rank == 0:
             zaxis = self.bases[-1].global_grid(self.dist, scale=self.dealias)
             kx = self.params['kx']
             ky = self.params['ky']
-            Nz, = self.sizes
-            x = np.linspace(0, 2*np.pi/kx, Nz)
-            y = 0.0
-            # plot slice y=0
-            ##  temperature = T0(z) + te(z) * exp(i*kx*x + i*ky*y) 
-            temperature = (T0_g[:, None] + te_g[:, None] * np.exp(1j*kx*x[None, :] + 1j*ky*y)).real
+            k = np.hypot(kx, ky)
+            # s: coordinate along the wavevector, kx*x + ky*y = k*s (x itself when ky = 0)
+            s = np.linspace(0, 2*np.pi/k if k > 0 else 1.0, 128)
+            ##  temperature = T0(z) + te(z) * exp(i*k*s) + c.c. = T0 + 2*Re(te*exp(i*k*s))
+            temperature = T0_g[:, None] + 2*(te_g[:, None] * np.exp(1j*k*s[None, :])).real
             # Initialize the figure only once
             if self.preview_fig is None:
                 plt.ion()  # Turn on interactive mode
                 self.preview_fig, self.preview_ax = plt.subplots(figsize=(4,3))
-                self.preview_im = self.preview_ax.pcolormesh(x, zaxis.ravel(), temperature, 
+                self.preview_im = self.preview_ax.pcolormesh(s, zaxis.ravel(), temperature,
                                              cmap='RdBu_r', shading='auto')
-                self.preview_ax.set_xlabel('x')
+                self.preview_ax.set_xlabel('x' if ky == 0 else 'along (kx, ky)')
                 self.preview_ax.set_ylabel('z')
                 self.preview_fig.colorbar(self.preview_im)
                 # self.preview_ax.set_title("Salt Concentration") 
