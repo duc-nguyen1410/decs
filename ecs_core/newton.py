@@ -11,6 +11,8 @@ ax, ay, az are appended only when searched (Tsearch, Rxsearch, ...).
 Equations
 ---------
     residual(xi) = x - G(x),   G(x) = sigma S(ax, ay, az) F^Tp(x)
+(with a SymmetryGroup in solver.sigma: G(x) = P S(ax, ay, az) F^Tp(x), P the projection
+onto the states invariant under all its generators)
 plus one phase condition per searched parameter, orthogonal to the
 corresponding neutral direction (d/dt, d/dx, ...).
 
@@ -23,7 +25,7 @@ Module layout
 """
 import logging
 import numpy as np
-from physics.symmetry import Symmetry
+from physics.symmetry import Symmetry, as_symmetry
 from . import krylov
 from . import output
 from . import stability as stability_mod
@@ -46,7 +48,7 @@ class ECSSolver:
         self.ax = p.get('ax', 0.0)
         self.ay = p.get('ay', 0.0)
         self.az = p.get('az', 0.0)
-        self.sigma = Symmetry()  # symmetry imposed on G (e.g. load_from_file)
+        self.sigma = Symmetry()  # imposed symmetry: a Symmetry or SymmetryGroup (or a list)
         # output
         self.odir = p.get('odir', 'ecs_output/')
         self.model.odir = self.odir
@@ -72,6 +74,17 @@ class ECSSolver:
         self.Nsave_modes = p.get('Nsave_modes', 5)  # save only the N most unstable modes (None: all)
         self.stability_method = p.get('stability_method', 'arnoldi')  # 'arnoldi' or 'evp'
         self.evp_target = p.get('evp_target', 0.0)  # sparse EVP: eigenvalues nearest this
+
+    @property
+    def sigma(self):
+        """Imposed symmetry: a Symmetry (G = sigma S F^Tp) or a SymmetryGroup of commuting
+        generators (G = P S F^Tp, P the projection onto their invariant states). Assigning
+        a list or tuple of Symmetry objects gives a SymmetryGroup."""
+        return self._sigma
+
+    @sigma.setter
+    def sigma(self, value):
+        self._sigma = as_symmetry(value)
 
     # ------------------------------------------------------------------
     # Unknowns xi = [x, (Tp), (ax), (ay), (az)]
@@ -103,15 +116,15 @@ class ECSSolver:
     # Maps
     # ------------------------------------------------------------------
     def return_map(self, x0, Tp: float, ax: float = 0, ay: float = 0, az: float = 0):
-        """sigma S(ax, ay, az) F^Tp(x0)."""
+        """sigma S(ax, ay, az) F^Tp(x0) (P S(ax, ay, az) F^Tp(x0) for a SymmetryGroup)."""
         x = self.model.flow_map(x0, Tp)
         # relative symmetry (shift) for travelling waves / relative periodic orbits
         relative_sigma = Symmetry(ax=ax, ay=ay, az=az)
         if relative_sigma.is_nontrivial():
             x = self.model.apply_symmetry(x, relative_sigma)
-        # imposed symmetry constraint
+        # imposed symmetry constraint (one symmetry, or the projection for a SymmetryGroup)
         if self.sigma.is_nontrivial():
-            x = self.model.apply_symmetry(x, self.sigma)
+            x = self.sigma.impose(self.model, x)
         return x
 
     def return_map_derivative(self, x_base, x_perturb, phi_base, Tp: float, ax: float = 0, ay: float = 0, az: float = 0):

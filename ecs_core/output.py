@@ -7,6 +7,7 @@ import os
 import json
 import logging
 import numpy as np
+from physics.symmetry import SymmetryGroup
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +67,9 @@ class RunLog:
                   f"bounded: {model.bounded}", f"dealias: {model.dealias}", f"mode: {model.mode}",
                   f"CFL: {model.use_CFL}", f"initial dt: {model.init_dt}"]
         if solver.sigma.is_nontrivial():
-            lines.append(f"symmetry: {str(solver.sigma)}")
+            # a SymmetryGroup lists all its generators (imposed together by projection)
+            label = "symmetry group" if isinstance(solver.sigma, SymmetryGroup) else "symmetry"
+            lines.append(f"{label}: {str(solver.sigma)}")
         lines += [f"ecs_odir: {solver.odir}", f"tol: {solver.tol}", f"max_iter: {solver.max_iter}",
                   f"initial Tp: {solver.Tp}", f"trust radius: {solver.trust_radius}",
                   f"krylov_dim: {solver.krylov_dim}", f"krylov_dim_min: {solver.krylov_dim_min}",

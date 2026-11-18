@@ -1,11 +1,11 @@
 """
 Physical models built on Dedalus.
 
-    from physics import SaltFinger, Symmetry
+    from physics import SaltFinger, Symmetry, SymmetryGroup
 """
 # Base classes and tools
 from .base import FluidModel
-from .symmetry import Symmetry
+from .symmetry import Symmetry, SymmetryGroup
 from .double_diffusion_base import DoubleDiffusion
 
 # Validated models
@@ -20,7 +20,7 @@ from .magneto import (BoundedQuasiStaticMagnetoConvection,
                       BoundedQuasiStaticMagnetoConvection_SingleMode)
 
 __all__ = [
-    'FluidModel', 'Symmetry', 'DoubleDiffusion',
+    'FluidModel', 'Symmetry', 'SymmetryGroup', 'DoubleDiffusion',
     'SaltFinger', 'SaltFingerFraser', 'ThermohalineShear',
     'BoundedSaltFinger', 'DiffusiveConvection', 'ShearedDiffusiveConvection',
     'WallShearedDiffusiveConvection',

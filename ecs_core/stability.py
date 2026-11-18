@@ -97,7 +97,9 @@ def stability(solver, xi, residual_tol=1e-6):
         os.makedirs(out_dir, exist_ok=True)
 
     original_symmetry = solver.sigma
-    solver.sigma = Symmetry()  # full stability: no symmetry constraint on perturbations
+    # full stability: no symmetry constraint on perturbations (removes a single Symmetry and
+    # every generator of a SymmetryGroup; the original object is restored below)
+    solver.sigma = Symmetry()
     try:
         if method == 'arnoldi':
             growthrate, eigenvalues, eigenvectors, res = _stability_arnoldi(solver, xi)

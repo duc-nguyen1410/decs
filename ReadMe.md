@@ -42,7 +42,7 @@ DECS is plain Python on top of [Dedalus v3](https://dedalus-project.org/); there
 physics/                    physical models (Dedalus problems)
   base.py                   FluidModel: state <-> vector, time integration, derivatives
   state_io.py               save_state / load_state (.h5, .nc)
-  symmetry.py               Symmetry and reflection / rotation / translation operators
+  symmetry.py               Symmetry, SymmetryGroup and reflection / rotation / translation operators
   rotation.py               rotation by 90 degrees about z on grid data (pure numpy)
   double_diffusion_base.py  DoubleDiffusion: shared base of double-diffusive models
   salt_finger.py            SaltFinger
@@ -86,6 +86,7 @@ model.load_state('examples/Lx0.6_WF/solution')       # initial guess
 
 solver = ECSSolver(model, {'tol': 1e-9, 'trust_radius': 20.0, 'odir': 'eq_output/'})
 solver.sigma.load_from_file('examples/symmetry_pixz.sym')   # optional imposed symmetry
+# several at once: solver.sigma = SymmetryGroup().load_from_file('examples/symmetry_pixz_shiftreflect.sym')
 xi, success, residual, norm, properties = solver.solve(x0=model.get_state(), Tp=0.2)
 ```
 
@@ -144,6 +145,7 @@ python -m pytest tests
 - `test_tools.py`: snapshot reading, batched distances of a snapshot series (against `shifted_distance`), recurrences, slow points and `symmetry_distance`.
 - `test_salt_finger_fraser.py`: `SaltFingerFraser` against `SaltFinger` after unit conversion (flow map, fluxes, parameter update, EVP); reduced models: LPN and IFSC against the `SaltFinger` options, no mean flow in IFSC, inertia-free fluctuations and the mean-flow equation of MIFSC.
 - `test_rotation.py`: rotation about $z$ on grid data (pure numpy), and with Dedalus: $R^2$ against the reflections, equivariance of the flow map, screw projection and helical diagnostics.
+- `test_symmetry_group.py`: several symmetries imposed together (`SymmetryGroup`): orders, commutation, multi-line `.sym` files, the projection, the solver map (single `Symmetry` unchanged) and stability without the constraint.
 - `test_regression.py`: two Newton iterations of every solution type (EQ, TW, PO, RPO), with fixed time steps and with CFL, plus Arnoldi stability, on a 32² grid. The results must equal `tests/data/regression_reference.npz` exactly.
 
 If a change is *meant* to alter the numerical results, check the new results, then regenerate the reference with `python tests/make_reference.py` and commit it with the change. On another machine or Dedalus/FFTW build, rounding can differ slightly: run with `DECS_EXACT=0` to accept relative differences below 1e-6.

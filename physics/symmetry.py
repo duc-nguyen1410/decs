@@ -31,23 +31,176 @@ class Symmetry:
         return f"[{self.s} {self.sx} {self.sy} {self.sz} {self.ax} {self.ay} {self.az}{rot}]"
 
     def load_from_file(self, filename:str):
-        with open(filename, 'r') as f:
-            logger.info(f"Loading symmetry from file {filename}")
-            # Format: s sx sy sz ax ay az [rz]
-            data = [float(x) for x in f.readline().split()]
-            if len(data) in (7, 8):
-                self.s, self.sx, self.sy, self.sz, self.ax, self.ay, self.az = data[:7]
-                self.rz = int(round(data[7])) % 4 if len(data) == 8 else 0
-                logger.info("Loaded symmetry: " + str(self))
-            else:
-                logger.warning(f"File {filename} contains invalid symmetry format! Expected 7 or 8 values, got {len(data)}.")
-        
+        """Read one symmetry `s sx sy sz ax ay az [rz]` from a .sym file (lines starting with
+        % or # are skipped). A file listing several symmetries needs SymmetryGroup.load_from_file."""
+        logger.info(f"Loading symmetry from file {filename}")
+        lines = _symmetry_lines(filename)
+        if len(lines) > 1:
+            raise ValueError(f"{filename} lists {len(lines)} symmetries: load it with "
+                             "SymmetryGroup().load_from_file(...) to impose all of them.")
+        data = lines[0] if lines else []
+        if len(data) in (7, 8):
+            self.s, self.sx, self.sy, self.sz, self.ax, self.ay, self.az = data[:7]
+            self.rz = int(round(data[7])) % 4 if len(data) == 8 else 0
+            logger.info("Loaded symmetry: " + str(self))
+        else:
+            logger.warning(f"File {filename} contains invalid symmetry format! Expected 7 or 8 values, got {len(data)}.")
+        return self
+
+    def impose(self, model, x):
+        """The map applied by ECSSolver.return_map: sigma x."""
+        return model.apply_symmetry(x, self)
 
     def is_nontrivial(self):
         return not (self.s == 1 and self.sx == 1 and self.sy == 1 and self.sz == 1 and 
                     self.ax == 0 and self.ay == 0 and self.az == 0 and self.rz == 0)
     
 
+
+def _symmetry_lines(filename):
+    """Numeric rows of a .sym file; blank lines and lines starting with % or # are skipped
+    (a Channelflow-style first line '% N' gives the number of symmetries)."""
+    rows = []
+    with open(filename, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line and line[0] not in '%#':
+                rows.append([float(v) for v in line.split()])
+    return rows
+
+
+def _affine_map(sigma, dim, bounded):
+    """Point map g(p) = L p + b (coordinates normalised by L_i, so shifts are mod 1) with
+    (sigma u)(p) = (sign) u(g(p)), as applied by SymmetryOps.apply_symmetry: reflections M,
+    then rotation R, then shift T(a) give g(p) = M Q^-1 (p + a). Exact (Fraction) entries."""
+    from fractions import Fraction
+    refl, shift = [sigma.sx, sigma.sy, sigma.sz], [sigma.ax, sigma.ay, sigma.az]
+    if dim == 2:                                # no y direction
+        refl[1], shift[1] = 1, 0
+    if bounded:                                 # the z-shift is not applied on a Chebyshev basis
+        shift[2] = 0
+    M = np.diag([int(round(v)) for v in refl]).astype(object)
+    rot = np.array([[0, 1, 0], [-1, 0, 0], [0, 0, 1]], dtype=object)   # Q^-1 (x, y) = (y, -x)
+    Qinv = np.eye(3, dtype=int).astype(object)
+    for _ in range(getattr(sigma, 'rz', 0) % 4):
+        Qinv = rot.dot(Qinv)
+    L = M.dot(Qinv)
+    b = L.dot(np.array([Fraction(v).limit_denominator(10**6) for v in shift], dtype=object))
+    return L, b
+
+
+def _same_map(A, B):
+    (L1, b1), (L2, b2) = A, B
+    return np.array_equal(L1, L2) and all((u - v) % 1 == 0 for u, v in zip(b1, b2))
+
+
+def _compose(A, B):
+    """(A o B)(p) = A(B(p))."""
+    (L1, b1), (L2, b2) = A, B
+    return L1.dot(L2), L1.dot(b2) + b1
+
+
+def symmetry_order(sigma, dim=3, bounded=False, max_order=64):
+    """Smallest n >= 1 with sigma^n = identity (2 for reflections and half shifts, 4 for the
+    screw Symmetry(rz=1, az=0.25)). dim and bounded as in the model (2-D: y is ignored;
+    bounded: the z-shift is ignored, as in apply_symmetry)."""
+    g = _affine_map(sigma, dim, bounded)
+    identity = (np.eye(3, dtype=int).astype(object), np.zeros(3, dtype=object))
+    gn = g
+    for n in range(1, max_order + 1):
+        if _same_map(gn, identity):
+            return n
+        gn = _compose(g, gn)
+    raise ValueError(f"Symmetry {sigma} has no finite order <= {max_order}: it cannot be "
+                     "imposed by projection (use rational shifts).")
+
+
+class SymmetryGroup:
+    """Several commuting symmetries imposed together, e.g. in ECSSolver.sigma:
+
+        solver.sigma = SymmetryGroup().load_from_file('symmetry_eq1.sym')   # several lines
+        solver.sigma = SymmetryGroup().load_from_file('symmetry_pixz.sym',
+                                                      'symmetry_piz_taux0.5_tauz0.5.sym')
+        solver.sigma = SymmetryGroup(Symmetry(sx=-1, sz=-1), Symmetry(sz=-1, ax=0.5, az=0.5))
+        solver.sigma = [sym1, sym2]           # a list is converted to a SymmetryGroup
+
+    The solver then uses G(x) = P S(a) F^Tp(x), with P the projection onto the states
+    invariant under every generator:  P = P_1 P_2 ... P_m,  P_i = (1/n_i) sum_k sigma_i^k
+    (n_i the order of sigma_i; P_i = (1 + sigma_i)/2 for an involution). For commuting
+    generators this is the average over the whole group they generate (for two involutions
+    (1 + s1 + s2 + s1 s2)/4); non-commuting generators are rejected. Imposing only the
+    product s1 s2 would be weaker: it keeps states symmetric under s1 s2 but not under s1, s2.
+    A plain Symmetry in solver.sigma keeps the old map G = sigma S(a) F^Tp."""
+
+    def __init__(self, *generators):
+        self.generators = []
+        self.orders = []          # None: computed from the symmetry (symmetry_order)
+        for g in generators:
+            self.add(g)
+
+    def add(self, sigma, order=None):
+        """Add a generator (a Symmetry); `order` overrides the computed n with sigma^n = 1."""
+        if not isinstance(sigma, Symmetry):
+            raise TypeError(f"SymmetryGroup generators must be Symmetry objects, got {type(sigma)}")
+        self.generators.append(sigma)
+        self.orders.append(order)
+        return self
+
+    def load_from_file(self, *filenames):
+        """Add the symmetries of one or more .sym files, one `s sx sy sz ax ay az [rz]` per
+        line (an optional Channelflow-style first line '% N' and # comments are skipped)."""
+        for filename in filenames:
+            logger.info(f"Loading symmetries from file {filename}")
+            for data in _symmetry_lines(filename):
+                if len(data) not in (7, 8):
+                    raise ValueError(f"{filename}: expected 7 or 8 values per line, got {len(data)}")
+                self.add(Symmetry(*data[:7], rz=data[7] if len(data) == 8 else 0))
+        logger.info("Loaded symmetry group: " + str(self))
+        return self
+
+    def __iter__(self):
+        return iter(self.generators)
+
+    def __len__(self):
+        return len(self.generators)
+
+    def __str__(self):
+        return " ".join(str(g) for g in self.generators) if self.generators else "[]"
+
+    def is_nontrivial(self):
+        return any(g.is_nontrivial() for g in self.generators)
+
+    def check_commuting(self, dim=3, bounded=False):
+        """Raise ValueError unless every pair of generators commutes."""
+        maps = [_affine_map(g, dim, bounded) for g in self.generators]
+        for i in range(len(maps)):
+            for j in range(i):
+                if not _same_map(_compose(maps[i], maps[j]), _compose(maps[j], maps[i])):
+                    raise ValueError(f"Symmetries {self.generators[j]} and {self.generators[i]} "
+                                     "do not commute: their projections cannot be combined.")
+
+    def group_orders(self, dim=3, bounded=False):
+        return [n if n is not None else symmetry_order(g, dim, bounded)
+                for g, n in zip(self.generators, self.orders)]
+
+    def impose(self, model, x):
+        """The map applied by ECSSolver.return_map: the projection P x."""
+        dim, bounded = model.dim, model.bounded
+        self.check_commuting(dim, bounded)
+        for g, n in zip(self.generators, self.group_orders(dim, bounded)):
+            if g.is_nontrivial():
+                x = model.symmetrize(x, g, n)
+        return x
+
+
+def as_symmetry(sigma):
+    """Symmetry / SymmetryGroup unchanged; a list or tuple of Symmetry -> SymmetryGroup;
+    None -> the identity Symmetry()."""
+    if sigma is None:
+        return Symmetry()
+    if isinstance(sigma, (list, tuple)):
+        return SymmetryGroup(*sigma)
+    return sigma
 
 def _reflection_perm(k, tol=1e-12):
     """Index permutation mapping each Fourier wavenumber k to -k

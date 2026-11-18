@@ -104,6 +104,31 @@ A `.sym` file holds one line `s sx sy sz ax ay az [rz]` for $u(x,y,z) \to s\,u(s
 
 Reflections flip the sign of the matching velocity component; a $z$-reflection also flips the sign of scalar fields. The global parity `s` is stored but not currently applied.
 
+### Several symmetries at once
+
+To impose several commuting symmetries $\sigma_1, \dots, \sigma_m$ together, put a `SymmetryGroup` in `solver.sigma`. The solver then uses
+
+$$G(x) = P\,S(a)\,F^{T_p}(x), \qquad P = P_1 \cdots P_m, \qquad P_i = \frac{1}{n_i}\sum_{k=0}^{n_i-1} \sigma_i^k \quad (\sigma_i^{n_i} = 1),$$
+
+the projection onto the states invariant under every $\sigma_i$ ($P_i = (1+\sigma_i)/2$ for an involution; for two, $P = (1 + \sigma_1 + \sigma_2 + \sigma_1\sigma_2)/4$). Applying the product $\sigma_1\sigma_2$ alone would not do this: it only imposes the single symmetry $\sigma_1\sigma_2$. Directions that break any $\sigma_i$ are mapped to zero by $DG$, so Newton cannot move along them. The orders $n_i$ come from the shifts and reflections (exact rational arithmetic, override with `group.add(sigma, order=n)`), and generators that do not commute are rejected. A plain `Symmetry` keeps the map $G = \sigma S F^{T_p}$, as before.
+
+```python
+from physics import Symmetry, SymmetryGroup
+solver.sigma = SymmetryGroup().load_from_file('examples/symmetry_pixz_shiftreflect.sym')
+# or several one-line files:  SymmetryGroup().load_from_file('symmetry_pixz.sym', 'symmetry_piz_taux0.5_tauz0.5.sym')
+# or directly:                solver.sigma = [Symmetry(sx=-1, sz=-1), Symmetry(sz=-1, ax=0.5, az=0.5)]
+```
+
+A multi-symmetry `.sym` file has one symmetry per line; as in Channelflow's symmetry lists, an optional first line `% N` gives their number (lines starting with `%` or `#` are skipped). [symmetry_pixz_shiftreflect.sym](../examples/symmetry_pixz_shiftreflect.sym):
+
+```
+% 2
+1 -1 1 -1 0 0 0
+1 1 1 -1 0.5 0 0.5
+```
+
+imposes $(x, z) 	o (-x, -z)$ and the shift-reflect $(x, z) 	o (x + L_x/2,\ 1/2 - z)$ together. `Symmetry.load_from_file` refuses a file with several symmetries. The run log lists every generator (`symmetry group: [...] [...]`). Continuation and `MultiShootECSSolver` use the same map. The stability analysis removes all of them (below).
+
 ### Rotations about $z$ and helical (screw) states
 
 In 3-D, `Symmetry(rz=q)` rotates the state by $q \times 90^\circ$ about the $z$-axis through the origin (counter-clockwise seen from $+z$), turning the horizontal velocity with it:
@@ -128,7 +153,7 @@ With $\sigma_h$ imposed, $x$- and $y$-shifts are not neutral (they move the rota
 
 ## Stability analysis
 
-With `computeStability=True`, a converged solution is analysed automatically (or call `solver.stability(xi)` yourself). The analysis is skipped unless the residual is below `1e-6`, and the imposed symmetry is not applied to perturbations. Two methods are available (`stability_method`); both write growth rates $\lambda$ and multipliers $\mu = e^{\lambda T}$ sorted from most unstable, plus the unstable modes.
+With `computeStability=True`, a converged solution is analysed automatically (or call `solver.stability(xi)` yourself). The analysis is skipped unless the residual is below `1e-6`, and the imposed symmetry (every generator of a `SymmetryGroup`) is not applied to perturbations, so symmetry-breaking modes are reported too. Two methods are available (`stability_method`); both write growth rates $\lambda$ and multipliers $\mu = e^{\lambda T}$ sorted from most unstable, plus the unstable modes.
 
 ### Arnoldi (`'arnoldi'`, default)
 

@@ -10,7 +10,7 @@ Unknowns
 Equations
 ---------
     r_i = x_{i+1} - F^tau(x_i)                       i = 1 .. m-1
-    r_m = x_1     - sigma S(ax, ay, az) F^tau(x_m)
+    r_m = x_1     - sigma S(ax, ay, az) F^tau(x_m)      (P instead of sigma for a SymmetryGroup)
 plus the phase conditions of ECSSolver, on x_1. The Jacobian is block-bidiagonal; one
 Jacobian-vector product integrates every segment once (one period in total), as in single
 shooting. Perturbations grow over tau instead of Tp, which conditions long or strongly
@@ -66,7 +66,7 @@ class MultiShootECSSolver(ECSSolver):
     # Maps
     # ------------------------------------------------------------------
     def _segment_map(self, x, i, tau, ax, ay, az):
-        """F^tau(x); for the last segment sigma S(ax, ay, az) F^tau(x)."""
+        """F^tau(x); for the last segment G = sigma S(ax, ay, az) F^tau(x) (return_map)."""
         if i == self.n_segments - 1:
             return self.return_map(x, tau, ax, ay, az)
         return self.model.flow_map(x, tau)
