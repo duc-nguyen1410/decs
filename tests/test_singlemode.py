@@ -85,3 +85,25 @@ def test_flow_map_matches_step_loop(model):
     stepped = model.get_state()
     assert np.isfinite(stepped).all() and np.abs(stepped - x0).max() > 0
     assert np.allclose(model.flow_map(x0, 40*PARAMS['init_dt']), stepped, rtol=0, atol=1e-13)
+
+
+def test_set_param_Ra_matches_model_built_at_that_Ra():
+    """set_param('Ra', value) takes Ra in the units of the params (Ra/Ra_c with scale_Ra_c), like the
+    full model: the flow map after set_param equals that of a model built at the new Ra."""
+    def build(Ra):
+        m = SingleMode(dict(PARAMS, Ra=Ra), sizes=(NZ,), bounds=(1.0,), bounded=True)
+        m.build_problems()
+        m.use_CFL = False
+        return m
+    a, b = build(2.0), build(3.0)
+    a.set_param('Ra', 3.0)
+    z, = b.dist.local_grids(b.bases[0])
+    for m in (a, b):
+        for f in m.fields:
+            f.change_scales(1)
+            f['g'] = 0
+        m.te['g'] = 1e-3*np.sin(np.pi*z)*(1 + 0.5j)
+    x0 = b.get_state()
+    ya, yb = a.flow_map(x0, 20*PARAMS['init_dt']), b.flow_map(x0, 20*PARAMS['init_dt'])
+    assert np.isfinite(ya).all()
+    assert np.allclose(ya, yb, rtol=0, atol=1e-13)

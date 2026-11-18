@@ -588,17 +588,18 @@ class BoundedQuasiStaticMagnetoConvection_SingleMode(MagnetoConvection_SingleMod
         Q = self.params['Q']
         Pr = self.params['Pr']
         Ra = self.params['Ra']
-        if self.params.get('scale_Ra_c', False):
-            Rac = critical_rayleigh(Q)
-            Ra = Ra*Rac
+        # Ra_param holds Ra as given (Ra/Ra_c with scale_Ra_c), so set_param('Ra', ...) can write it
+        # directly; the equations use Ra*Rac, as in the full model.
+        Rac = critical_rayleigh(Q) if self.params.get('scale_Ra_c', False) else 1.0
 
         # PARAMETERS / BACKGROUND FIELDS (The Knowns)
         self.Ra_param = self.dist.Field(name='Ra_param'); self.Ra_param['g'] = Ra
+        self.Rac_param = self.dist.Field(name='Rac_param'); self.Rac_param['g'] = Rac
         self.Pr_param = self.dist.Field(name='Pr_param'); self.Pr_param['g'] = Pr
         self.Q_param = self.dist.Field(name='Q_param'); self.Q_param['g'] = Q
 
         ns = {'np': np,
-              'Ra': self.Ra_param, 'Pr': self.Pr_param, 'Q': self.Q_param,
+              'Ra': self.Ra_param*self.Rac_param, 'Pr': self.Pr_param, 'Q': self.Q_param,
               'kx': self.params['kx'], 'ky': self.params['ky'], 
               'k2': self.params['kx']**2 + self.params['ky']**2,
               'dz': dz,
