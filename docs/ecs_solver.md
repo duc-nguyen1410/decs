@@ -93,14 +93,33 @@ solver.sigma.load_from_file('examples/symmetry_pixz.sym')
 # or: from physics import Symmetry; solver.sigma = Symmetry(sx=-1, sz=-1)
 ```
 
-A `.sym` file holds one line `s sx sy sz ax ay az` for $u(x,y,z) \to s\,u(s_x x + a_x,\ s_y y + a_y,\ s_z z + a_z)$:
+A `.sym` file holds one line `s sx sy sz ax ay az [rz]` for $u(x,y,z) \to s\,u(s_x x + a_x,\ s_y y + a_y,\ s_z z + a_z)$, with an optional 8th value `rz` (default 0) for rotations about $z$ (below):
 
 | File | Line | Symmetry |
 |---|---|---|
 | [symmetry_pix.sym](../examples/symmetry_pix.sym) | `1 -1 1 1 0 0 0` | reflection $x \to -x$ |
 | [symmetry_pixz.sym](../examples/symmetry_pixz.sym) | `1 -1 1 -1 0 0 0` | reflections $x \to -x$ and $z \to -z$ |
+| [symmetry_screw.sym](../examples/symmetry_screw.sym) | `1 1 1 1 0 0 0.25 1` | screw: rotation by $90^\circ$ about $z$, then shift by $L_z/4$ (3-D) |
 
 Reflections flip the sign of the matching velocity component; a $z$-reflection also flips the sign of scalar fields. The global parity `s` is stored but not currently applied.
+
+### Rotations about $z$ and helical (screw) states
+
+In 3-D, `Symmetry(rz=q)` rotates the state by $q \times 90^\circ$ about the $z$-axis through the origin (counter-clockwise seen from $+z$), turning the horizontal velocity with it:
+
+$$[R\,q](x, y, z) = Q\,q\big(Q^{-1}(x, y),\ z\big), \qquad Q(x, y) = (-y, x), \qquad (u, v) \to (-v, u).$$
+
+It needs a square box, $L_x = L_y$ and $N_x = N_y$: the rotation then maps grid points to grid points and is an exact permutation of the grid values ([rotation.py](../physics/rotation.py)). A `Symmetry` is applied as shift $\circ$ rotation $\circ$ reflections. $R^2$ equals `Symmetry(sx=-1, sy=-1)`, and the equations of `SaltFinger` are invariant under $R$ (gravity is along $z$). Other rotations are not symmetries of the box (continuous rotations need a cylinder) or of the equations (rotations about horizontal axes, other than the half-turns given by two reflections).
+
+The **screw symmetry** $\sigma_h = T_z(h L_z/4) \circ R$, $h = \pm 1$, is `Symmetry(rz=1, az=0.25*h)` (`screw_symmetry(h)` in [helical.py](../tools/helical.py)), of order 4. With $Z = U + iV$ the horizontally averaged flow, a state with $\sigma_h x = x$ has only the vertical modes $m = -h, 3h, -5h, \dots$ of $Z$: no net mean flow and no planar shear, but a helix whose direction turns with height, $U(z) \propto (\cos 2\pi z/L_z,\ -h \sin 2\pi z/L_z)$. $\sigma_h$ and $\sigma_h^{-1}$ (`rz=3, az=-0.25*h`) give the same subspace; $h = \pm 1$ are mirror images of each other.
+
+| Function | Purpose |
+|---|---|
+| `model.symmetrize(x, sigma, n)` | projection $\frac1n\sum_k \sigma^k x$ onto the $\sigma$-invariant states ($\sigma^n = 1$) |
+| `helical_guess(model_2d, model_3d, sigma, scale)` | 2-D state (e.g. TM1) extended uniformly in $y$ (`change_grid`), then projected; the projection halves the shear, `scale` restores it |
+| `helical_diagnostics(model, x, sigma)` | mean-flow rms, `planar_fraction` (1 planar, 0 circular), `winding_number` (energy-weighted turns of the mean flow over $L_z$: $-h$ for the screw helix, 0 for planar shear), mean-flow and total helicity $\langle \boldsymbol{u}\cdot\nabla\times\boldsymbol{u}\rangle$, and $\lVert\sigma x - x\rVert/\lVert x\rVert$ |
+
+With $\sigma_h$ imposed, $x$- and $y$-shifts are not neutral (they move the rotation axis) but the $z$-shift is, so search it (`Rzsearch=True`). For a screw-symmetric state a drift in $z$ is the same as a rotation of the pattern: a solution with $a_z \neq 0$ is a rotating wave, turning at $2\pi a_z/T_p$. [find_helical.py](../examples/find_helical.py) builds the guess from TM1 or from a 3-D state, solves, and writes `helical_diagnostics.txt`. `find_symmetries` does not test rotations yet; check a state with `helical_diagnostics(model, x, screw_symmetry(h))`.
 
 ### Finding the symmetry of a solution
 

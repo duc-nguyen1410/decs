@@ -42,7 +42,8 @@ DECS is plain Python on top of [Dedalus v3](https://dedalus-project.org/); there
 physics/                    physical models (Dedalus problems)
   base.py                   FluidModel: state <-> vector, time integration, derivatives
   state_io.py               save_state / load_state (.h5, .nc)
-  symmetry.py               Symmetry and reflection / translation operators
+  symmetry.py               Symmetry and reflection / rotation / translation operators
+  rotation.py               rotation by 90 degrees about z on grid data (pure numpy)
   double_diffusion_base.py  DoubleDiffusion: shared base of double-diffusive models
   salt_finger.py            SaltFinger
   salt_finger_fraser.py     SaltFingerFraser: units of Fraser et al. (2025), models full/LPN/IFSC/MIFSC
@@ -64,6 +65,7 @@ tools/                      tools around the solver (need only a model)
   snapshots.py              load_snapshot(s): states from Dedalus snapshot files
   timeseries.py             lag_distances, recurrences, slow_points, reference_distances, exponential_rate
   branches.py               guesses for new branches from unstable modes, Newton from them
+  helical.py                screw symmetry, helical initial guesses and diagnostics (3-D)
 examples/                   example scripts and example solutions
 tests/                      test suite (pytest), see Tests below
 docs/                       documentation
@@ -103,6 +105,7 @@ Run in parallel with MPI, e.g. `mpiexec -n 4 python3 find_eq.py`.
 | New branches from unstable modes | `load_unstable_modes(...)`, `branch_guesses(...)`, `search_branches(solver, x, guesses, odir)`, see [docs](docs/ecs_solver.md#new-branches-from-unstable-modes) | [find_branches.py](examples/find_branches.py) |
 | Approach to / escape from an equilibrium (distance vs exp(λt)) | `reference_distances(...)`, `exponential_rate(T, D, window)`, see [docs](docs/ecs_solver.md#approach-to-and-escape-from-an-equilibrium) | [approach_escape.py](examples/approach_escape.py), [approach_escape_snapshots.py](examples/approach_escape_snapshots.py) |
 | Symmetries of a solution, compare with known ones | `find_symmetries(model, x)`, `nearest_solution(model, x, catalogue)`, see [docs](docs/ecs_solver.md#finding-the-symmetry-of-a-solution) | [find_symmetry.py](examples/find_symmetry.py) |
+| Helical (screw-symmetric) states in 3-D | `solver.sigma = screw_symmetry(h)` (= `Symmetry(rz=1, az=0.25*h)`), `helical_guess(...)`, `helical_diagnostics(...)`, see [docs](docs/ecs_solver.md#rotations-about-z-and-helical-screw-states) | [find_helical.py](examples/find_helical.py) |
 | Change grid / domain size | `change_grid(model_old, model_new)` | [change_grid.py](examples/change_grid.py) |
 | Direct simulation | Dedalus IVP solver of a model | [simulate.py](examples/simulate.py) |
 
@@ -140,6 +143,7 @@ python -m pytest tests
 - `test_branches.py`: reading unstable modes (real and complex), branch guesses and the classification of Newton results.
 - `test_tools.py`: snapshot reading, batched distances of a snapshot series (against `shifted_distance`), recurrences, slow points and `symmetry_distance`.
 - `test_salt_finger_fraser.py`: `SaltFingerFraser` against `SaltFinger` after unit conversion (flow map, fluxes, parameter update, EVP); reduced models: LPN and IFSC against the `SaltFinger` options, no mean flow in IFSC, inertia-free fluctuations and the mean-flow equation of MIFSC.
+- `test_rotation.py`: rotation about $z$ on grid data (pure numpy), and with Dedalus: $R^2$ against the reflections, equivariance of the flow map, screw projection and helical diagnostics.
 - `test_regression.py`: two Newton iterations of every solution type (EQ, TW, PO, RPO), with fixed time steps and with CFL, plus Arnoldi stability, on a 32² grid. The results must equal `tests/data/regression_reference.npz` exactly.
 
 If a change is *meant* to alter the numerical results, check the new results, then regenerate the reference with `python tests/make_reference.py` and commit it with the change. On another machine or Dedalus/FFTW build, rounding can differ slightly: run with `DECS_EXACT=0` to accept relative differences below 1e-6.
