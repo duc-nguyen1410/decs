@@ -39,7 +39,6 @@ Relation to SaltFinger (Ra = 1, Pr = Sc tau, Rrho = 1/((1 + eps) tau)):
     t = tau t_SF,  u = u_SF/tau,  T = T_SF/tau,  S = (1 + eps) S_SF,  periods Tp = tau Tp_SF,
     <w S> = (1 + eps)/tau <w S>_SF,  <w T> = <w T>_SF/tau^2,  growth rates s = s_SF/tau.
     SaltFinger options: stokes + temperature_feedback = 'IFSC', temperature_feedback = 'LPN'.
-from_saltfinger_state / to_saltfinger_state convert state vectors on the same grid.
 """
 import dedalus.public as de
 import numpy as np
@@ -202,20 +201,3 @@ class SaltFingerFraser(DoubleDiffusion):
         meanprofiles.add_task(h_mean(self.te), name='te')  # horizontally averaged temperature
         meanprofiles.add_task(h_mean(self.sa), name='sa')  # horizontally averaged salinity
 
-
-def from_saltfinger_state(x, eps, tau, dim=3):
-    """SaltFinger state (u, T, S) -> SaltFingerFraser units: u/tau, T/tau, (1 + eps) S."""
-    y = np.array(x, copy=True)
-    n = y.size//(dim + 2)
-    y[:(dim + 1)*n] /= tau
-    y[(dim + 1)*n:] *= 1 + eps
-    return y
-
-
-def to_saltfinger_state(y, eps, tau, dim=3):
-    """SaltFingerFraser state -> SaltFinger units (inverse of from_saltfinger_state)."""
-    x = np.array(y, copy=True)
-    n = x.size//(dim + 2)
-    x[:(dim + 1)*n] *= tau
-    x[(dim + 1)*n:] /= 1 + eps
-    return x

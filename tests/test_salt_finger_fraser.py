@@ -5,13 +5,30 @@ import pytest
 
 dedalus = pytest.importorskip("dedalus.public")
 from physics import SaltFinger, SaltFingerFraser                       # noqa: E402
-from physics.salt_finger_fraser import from_saltfinger_state, to_saltfinger_state  # noqa: E402
 
 PR, TAU, EPS = 5.0, 0.05, 0.5
 L = 2*np.pi/0.6                       # about one fastest-growing finger wavelength (in d)
 SIZES, BOUNDS = (16, 32), (L, 2*L)
 DT = 0.1                              # SaltFinger time step (units d^2/kT)
 T = 2.0                               # 20 steps
+
+
+def from_saltfinger_state(x, eps, tau, dim=2):
+    """SaltFinger state (u, T, S) -> SaltFingerFraser units: u/tau, T/tau, (1 + eps) S."""
+    y = np.array(x, copy=True)
+    n = y.size//(dim + 2)
+    y[:(dim + 1)*n] /= tau
+    y[(dim + 1)*n:] *= 1 + eps
+    return y
+
+
+def to_saltfinger_state(y, eps, tau, dim=2):
+    """Inverse of from_saltfinger_state."""
+    x = np.array(y, copy=True)
+    n = x.size//(dim + 2)
+    x[:(dim + 1)*n] *= tau
+    x[(dim + 1)*n:] /= 1 + eps
+    return x
 
 
 def saltfinger(eps=EPS, **kw):
