@@ -45,6 +45,7 @@ physics/                    physical models (Dedalus problems)
   symmetry.py               Symmetry and reflection / translation operators
   double_diffusion_base.py  DoubleDiffusion: shared base of double-diffusive models
   salt_finger.py            SaltFinger
+  salt_finger_fraser.py     SaltFingerFraser: units of Fraser et al. (2025), models full/LPN/IFSC/MIFSC
   thermohaline_shear.py     ThermohalineShear
   double_diffusion.py       other double-diffusive models (not yet validated)
   magneto.py                magnetoconvection models (not yet validated)
@@ -138,6 +139,7 @@ python -m pytest tests
 - `test_edge.py`: edge tracking on a bistable toy model with a known edge state.
 - `test_branches.py`: reading unstable modes (real and complex), branch guesses and the classification of Newton results.
 - `test_tools.py`: snapshot reading, batched distances of a snapshot series (against `shifted_distance`), recurrences, slow points and `symmetry_distance`.
+- `test_salt_finger_fraser.py`: `SaltFingerFraser` against `SaltFinger` after unit conversion (flow map, fluxes, parameter update, EVP); reduced models: LPN and IFSC against the `SaltFinger` options, no mean flow in IFSC, inertia-free fluctuations and the mean-flow equation of MIFSC.
 - `test_regression.py`: two Newton iterations of every solution type (EQ, TW, PO, RPO), with fixed time steps and with CFL, plus Arnoldi stability, on a 32² grid. The results must equal `tests/data/regression_reference.npz` exactly.
 
 If a change is *meant* to alter the numerical results, check the new results, then regenerate the reference with `python tests/make_reference.py` and commit it with the change. On another machine or Dedalus/FFTW build, rounding can differ slightly: run with `DECS_EXACT=0` to accept relative differences below 1e-6.
