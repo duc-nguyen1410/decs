@@ -68,8 +68,8 @@ class ECSSolver:
         # stability
         self.computeStability = p.get('computeStability', False)
         self.projectNeutralDrift = p.get('projectNeutralDrift', False)
-        self.Neigen = p.get('Neigen', 5)
-        self.Nsave_modes = p.get('Nsave_modes', None)  # save only the N most unstable modes (None: all)
+        self.Neigen = p.get('Neigen', 50)
+        self.Nsave_modes = p.get('Nsave_modes', 5)  # save only the N most unstable modes (None: all)
         self.stability_method = p.get('stability_method', 'arnoldi')  # 'arnoldi' or 'evp'
         self.evp_target = p.get('evp_target', 0.0)  # sparse EVP: eigenvalues nearest this
 

@@ -1,5 +1,5 @@
 """Which unstable modes the stability step saves (ecs_core/stability.py, modes_to_save; solver option
-Nsave_modes): the most unstable first, at most Nsave_modes of them, all of them by default.
+Nsave_modes): the most unstable first, at most Nsave_modes of them, all of them with nsave=None (the solver default is Nsave_modes=5).
 Run: python -m pytest tests"""
 import numpy as np
 import pytest

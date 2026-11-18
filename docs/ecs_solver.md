@@ -46,7 +46,8 @@ Each Newton step solves $J\,\delta\xi = -r$ with GMRES, using only matrix-free p
 | `eps_t` | `1e-6` | time step for $\partial_t x$ (period phase condition) |
 | `computeStability` | `False` | run stability analysis after convergence |
 | `stability_method` | `'arnoldi'` | `'arnoldi'` (any solution) or `'evp'` (equilibria and traveling waves, see below) |
-| `Neigen` | `5` | Arnoldi iterations (raise it, e.g. 40-60, when the leading eigenvalues must be converged: check `residual.mtx`); with `'evp'`, number of eigenvalues returned |
+| `Neigen` | `50` | Arnoldi iterations; with `'evp'`, number of eigenvalues returned |
+| `Nsave_modes` | `5` | number of unstable modes written to disk, most unstable first (`None`: all); the eigenvalue files always list all `Neigen` modes |
 | `evp_target` | `0.0` | with `'evp'`: the sparse eigenvalue search returns eigenvalues nearest this value (keep 0, see below) |
 | `projectNeutralDrift` | `False` | Arnoldi: project neutral (shift / time) directions out of the analysis; EVP: drop the modes that are neutral shifts of the base state and return `Neigen` other modes |
 | `save_ecs_history` | `False` | keep the iterate of every Newton step (`solution_iter_<i>`) instead of overwriting `solution` |
