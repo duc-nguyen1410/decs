@@ -68,6 +68,15 @@ def arnoldi(matvec, r, n, project=None):
     return Q, H
 
 
+def modes_to_save(growthrate, nsave=None):
+    """Indices of the unstable modes (Re(growthrate) > 0) to save, most unstable first; at most nsave of
+    them (None: all). A complex pair counts as two modes, so an odd nsave can cut a pair: its partner is
+    the complex conjugate and carries no new information."""
+    unstable = np.where(growthrate.real > 0.0)[0]
+    unstable = unstable[np.argsort(-growthrate.real[unstable], kind='stable')]
+    return unstable if nsave is None else unstable[:max(int(nsave), 0)]
+
+
 def stability(solver, xi, residual_tol=1e-6):
     """Linear stability of the converged solution xi, by solver.stability_method:
         'arnoldi' : Arnoldi iteration on the linearised flow map (any solution type);
@@ -75,7 +84,8 @@ def stability(solver, xi, residual_tol=1e-6):
     Saves stability/{eigenvalues,growthrate}.mtx (Floquet multipliers exp(lambda Tp) and
     growth rates lambda, most unstable first), residual.mtx (Arnoldi Ritz residuals) and the
     unstable modes in solver.odir/stability: unstable_mode_<i> (real part) and, for complex modes,
-    unstable_mode_<i>_imag. Skipped if xi is not converged."""
+    unstable_mode_<i>_imag -- all of them, or only the solver.Nsave_modes most unstable (i = 0 is the most
+    unstable). The eigenvalue files always list all Neigen modes. Skipped if xi is not converged."""
     model = solver.model
     comm = model.dist.comm
     if np.linalg.norm(solver.residual(xi)) >= residual_tol:
@@ -104,8 +114,9 @@ def stability(solver, xi, residual_tol=1e-6):
 
         unstable = np.where(growthrate.real > 0.0)[0]
         if unstable.size > 0:
-            logger.info(f"There are {unstable.size} unstable modes.")
-            modes = comm.bcast(eigenvectors[:, unstable] if comm.rank == 0 else None, root=0)
+            keep = modes_to_save(growthrate, solver.Nsave_modes)
+            logger.info(f"There are {unstable.size} unstable modes; saving {keep.size}.")
+            modes = comm.bcast(eigenvectors[:, keep] if comm.rank == 0 else None, root=0)
             for i, mode in enumerate(modes.T):
                 model.save_state(filename=os.path.join(out_dir, f'unstable_mode_{i}'),
                                  state_vector=mode.real)

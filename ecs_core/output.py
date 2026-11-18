@@ -72,7 +72,7 @@ class RunLog:
                   f"krylov_dim: {solver.krylov_dim}", f"krylov_dim_min: {solver.krylov_dim_min}",
                   f"projectNeutralDrift: {solver.projectNeutralDrift}",
                   f"computeStability: {solver.computeStability}", f"stability_method: {solver.stability_method}",
-                  f"Neigen: {solver.Neigen}",
+                  f"Neigen: {solver.Neigen}", f"Nsave_modes: {solver.Nsave_modes}",
                   f"save_ecs_history: {solver.save_ecs_history}",
                   f"save_snapshots: {model.save_snapshots}",
                   f"save_flowproperties: {model.save_flowproperties}",
