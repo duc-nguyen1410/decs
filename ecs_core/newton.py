@@ -68,7 +68,7 @@ class ECSSolver:
         # stability
         self.computeStability = p.get('computeStability', False)
         self.projectNeutralDrift = p.get('projectNeutralDrift', False)
-        self.Neigen = p.get('Neigen', 50)
+        self.Neigen = p.get('Neigen', 5)
         self.Nsave_modes = p.get('Nsave_modes', None)  # save only the N most unstable modes (None: all)
         self.stability_method = p.get('stability_method', 'arnoldi')  # 'arnoldi' or 'evp'
         self.evp_target = p.get('evp_target', 0.0)  # sparse EVP: eigenvalues nearest this
@@ -245,6 +245,17 @@ class ECSSolver:
             log.write(f"Iteration {i}, Residual norm: {norm_b:.5e}, ||x||: {np.linalg.norm(x)}, "
                       f"GMRES error: {error}, trust radius: {tr}{pstr}")
             output.write_iteration_files(self, self.Tp, self.ax, self.ay, self.az, norm_b)
+        else:
+            # the loop tests convergence before each step, so a step that converges on the
+            # last allowed iteration must be checked here (otherwise it is reported as failed)
+            if norm_b < self.tol:
+                self.model.set_state(self._sync_params(xi))
+                self.model.save_state(self.odir + 'solution')
+                output.write_flow_properties(self, xi)
+                logger.info("Convergence achieved!")
+                log.write("Convergence achieved!")
+                success = True
+                self._on_converged(xi)
         log.close()
 
         x = self._sync_params(xi)
