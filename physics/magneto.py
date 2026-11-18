@@ -466,7 +466,63 @@ class MagnetoConvection_SingleMode(FluidModel):
         # Newton solver now sees [u, Phi, te], save 'te' as last element for preview if needed
         self.fields = [self.u, self.v, self.w, self.U0, self.V0, \
                        self.te, self.T0] # for ECS
-        
+
+    # ------------------------------------------------------------------
+    # State vector: the mode amplitudes (u, v, w, te) are complex, the horizontal means
+    # (U0, V0, T0) real. The state holds [Re, Im] of each amplitude and the means, so that
+    # Newton, continuation and stability (which work on real vectors) see the whole state.
+    # ------------------------------------------------------------------
+    complex_fields = ('u', 'v', 'w', 'te')
+
+    def size(self, dealias=False):
+        n = int(np.prod(self.get_grid_shape(dealias=dealias)))
+        return n*sum(2 if f.name in self.complex_fields else 1 for f in self.fields)
+
+    def _pack(self, fields_data):
+        parts = []
+        for field, g in zip(self.fields, fields_data):
+            parts.append(g.real.ravel())
+            if field.name in self.complex_fields:
+                parts.append(g.imag.ravel())
+        return np.concatenate(parts)
+
+    def get_state(self, dealias=False):
+        data = []
+        for field in self.fields:
+            if not dealias: field.change_scales(1.0)
+            data.append(field.allgather_data('g'))
+        return self._pack(data)
+
+    def current_state(self):
+        return self._pack([self._grid_data(field.copy()) for field in self.fields])
+
+    def set_state(self, state_vector):
+        n = int(np.prod(self.get_grid_shape()))
+        cursor = 0
+        for field in self.fields:
+            data = np.array(state_vector[cursor:cursor+n], dtype=np.complex128)
+            cursor += n
+            if field.name in self.complex_fields:
+                data = data + 1j*np.asarray(state_vector[cursor:cursor+n])
+                cursor += n
+            field.load_from_global_grid_data(data.reshape(self.get_grid_shape()))
+
+    def _phase_derivative(self, x, k):
+        """d/dx (k = kx) or d/dy (k = ky) of the state x: i k times each amplitude, 0 for the means."""
+        self.set_state(x)
+        data = []
+        for field in self.fields:
+            field.change_scales(1.0)
+            g = field.allgather_data('g')
+            data.append(1j*k*g if field.name in self.complex_fields else np.zeros_like(g))
+        return self._pack(data)
+
+    def x_derivative(self, x):
+        return self._phase_derivative(x, self.params['kx'])
+
+    def y_derivative(self, x):
+        return self._phase_derivative(x, self.params['ky'])
+
     def preview(self):
         """ Preview the temperature over one wavelength along the wavevector (kx, ky). """
         # gather on the same (dealiased) grid as zaxis; keep te complex (its phase matters)

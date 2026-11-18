@@ -17,13 +17,14 @@ def search_values(solver, Tp, ax, ay, az):
     out = {}
     if solver.Tsearch:
         out['Tp'] = Tp
-    for name, a, on, L in (('x', ax, solver.Rxsearch, solver.model.bounds[0]),
-                           ('y', ay, solver.Rysearch, solver.model.bounds[1]),
-                           ('z', az, solver.Rzsearch, solver.model.bounds[-1])):
+    # the domain length is looked up only for a searched shift (a 1-D model has no x or y bounds)
+    for name, a, on, axis in (('x', ax, solver.Rxsearch, 0),
+                              ('y', ay, solver.Rysearch, 1),
+                              ('z', az, solver.Rzsearch, -1)):
         if on:
             out[f'a{name}'] = a
             if not solver.Tsearch:
-                out[f'c{name}'] = a*Tp*L
+                out[f'c{name}'] = a*Tp*solver.model.bounds[axis]
     return out
 
 

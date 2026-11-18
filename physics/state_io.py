@@ -25,19 +25,23 @@ class StateIO:
         self.dist.comm.Barrier() # Wait for directory to exist before writing
         logger.info(f"Saving state to {filename}")
 
-        gathered_data = {}
+        # (dataset name, data, is vector); fields listed in self.complex_fields (complex
+        # amplitudes, e.g. the single-mode model) also store their imaginary part as <name>_imag
+        complex_fields = getattr(self, 'complex_fields', ())
+        gathered = []
         for field in self.fields:
             if not dealias: field.change_scales(1.0)
-            # Use the field name as the HDF5 dataset name
-            gathered_data[field.name] = field.allgather_data('g').real # shape [dim][nx][ny][nz]
+            data = field.allgather_data('g') # shape [dim][nx][ny][nz]
+            is_vector = len(field.tensorsig) > 0
+            gathered.append((field.name, data.real, is_vector))
+            if field.name in complex_fields:
+                gathered.append((field.name + '_imag', data.imag, is_vector))
 
         if self.dist.comm.rank == 0:
             # --- HDF5 Path ---
             if self.ext == '.h5':
                 with h5py.File(filename, mode='w') as f:
-                    for name, data in gathered_data.items():
-                        field_obj = next(obj for obj in self.fields if obj.name == name)
-                        is_vector = len(field_obj.tensorsig) > 0
+                    for name, data, is_vector in gathered:
                         if is_vector:
                             # Generic component naming: u0, u1, u2 
                             # Corresponds to (u, w) in 2D or (u, v, w) in 
@@ -84,9 +88,7 @@ class StateIO:
 
                     # Add Fields
                     # Dedalus use shape [dim][nz][ny][nx]
-                    for name, data in gathered_data.items():
-                        working_field = next(field for field in self.fields if field.name == name)
-                        is_vector = len(working_field.tensorsig) > 0
+                    for name, data, is_vector in gathered:
                         if is_vector: # is vector
                             for i in range(self.dim):
                                 var = ds.createVariable(f'{name}_{i}', 'f8', tuple(coord_names))
@@ -124,6 +126,8 @@ class StateIO:
                     else:
                         # Scalar field (e.g., te, sa)
                         data = f[field.name][:]
+                        if field.name + '_imag' in f:         # complex amplitude
+                            data = data + 1j*f[field.name + '_imag'][:]
                     # Load the gathered data into the distributed field
                     # Dedalus handles the distribution to different MPI ranks automatically
                     field.load_from_global_grid_data(data)
@@ -151,6 +155,8 @@ class StateIO:
                     else:
                         # Read scalar field [nz, ny, nx] and transpose back to [nx, ny, nz]
                         data = ds.variables[field.name][:].T
+                        if field.name + '_imag' in ds.variables:   # complex amplitude
+                            data = data + 1j*ds.variables[field.name + '_imag'][:].T
                     # Distribute global data back into Dedalus field using (Dim, Nx, [Ny], Nz)
                     field.load_from_global_grid_data(data)
         else:
