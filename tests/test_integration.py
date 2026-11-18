@@ -177,3 +177,27 @@ def test_change_grid_2d_to_3d(model, states):
     for j in range(4):
         assert np.allclose(u[[0, 2], :, j], u2, rtol=0, atol=1e-13)
         assert np.allclose(rest[:, :, j], rest2, rtol=0, atol=1e-13)
+
+
+def test_change_grid_2d_to_3d_matches_fields_by_name():
+    """Fields are matched by name, not position: the 3-D magnetoconvection model has the extra
+    field Phi ([u, Phi, te] against [u, te] in 2-D), which is set to zero, and te stays te."""
+    from tools import change_grid
+    from physics import BoundedQuasiStaticMagnetoConvection as Magneto
+    params = {'Ra': 2.0, 'Pr': 1.0, 'Q': 100.0, 'scale_Ra_c': True, 'stress-free': True}
+    m2 = Magneto(params, sizes=(16, 16), bounds=(1.0, 1.0), bounded=True)
+    m3 = Magneto(params, sizes=(16, 4, 16), bounds=(1.0, 0.5, 1.0), bounded=True)
+    x, z = m2.dist.local_grids(*m2.bases)
+    m2.te.change_scales(1); m2.u.change_scales(1)
+    m2.te['g'] = np.sin(2*np.pi*x)*np.sin(np.pi*z)
+    m2.u['g'][0] = np.cos(2*np.pi*x)*np.cos(np.pi*z)
+    m2.u['g'][1] = np.sin(2*np.pi*x)*np.sin(np.pi*z)
+    change_grid(m2, m3)
+    for f in (m2.te, m2.u, m3.te, m3.u, m3.Phi):
+        f.change_scales(1)
+    te2, u2 = m2.te.allgather_data('g'), m2.u.allgather_data('g')
+    te3, u3, Phi3 = m3.te.allgather_data('g'), m3.u.allgather_data('g'), m3.Phi.allgather_data('g')
+    assert np.abs(Phi3).max() == 0 and np.abs(u3[1]).max() == 0
+    for j in range(4):
+        assert np.allclose(te3[:, j], te2, rtol=0, atol=1e-13)
+        assert np.allclose(u3[[0, 2], :, j], u2, rtol=0, atol=1e-13)

@@ -55,9 +55,16 @@ def change_grid(model_old, model_new):
             maps.append(_index_map([(0, 0)], keys_new))
     idx_old = np.ix_(*[m[0] for m in maps])
     idx_new = np.ix_(*[m[1] for m in maps])
-    for f_old, f_new in zip(model_old.fields, model_new.fields):
-        c_old = f_old.allgather_data('c')
+    # fields are matched by name: a 3-D model can have fields the 2-D one lacks (e.g. the
+    # electric potential Phi of magnetoconvection), which are set to zero
+    old_by_name = {f.name: f for f in model_old.fields}
+    for f_new in model_new.fields:
         c_new = np.zeros_like(f_new.allgather_data('c'))
+        f_old = old_by_name.get(f_new.name)
+        if f_old is None:
+            f_new.load_from_global_coeff_data(c_new)
+            continue
+        c_old = f_old.allgather_data('c')
         vector = len(f_old.tensorsig) > 0
         if model_new.dim > model_old.dim:
             if vector:                           # (u, w) -> (u, 0, w)
