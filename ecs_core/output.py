@@ -76,6 +76,8 @@ class RunLog:
                   f"projectNeutralDrift: {solver.projectNeutralDrift}",
                   f"computeStability: {solver.computeStability}", f"stability_method: {solver.stability_method}",
                   f"Neigen: {solver.Neigen}", f"Nsave_modes: {solver.Nsave_modes}",
+                  f"arnoldi_tol: {solver.arnoldi_tol}", f"arnoldi_nconv: {solver.arnoldi_nconv}",
+                  f"arnoldi_warm_start: {solver.arnoldi_warm_start}",
                   f"save_ecs_history: {solver.save_ecs_history}",
                   f"save_snapshots: {model.save_snapshots}",
                   f"save_flowproperties: {model.save_flowproperties}",

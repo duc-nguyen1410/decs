@@ -46,8 +46,12 @@ Each Newton step solves $J\,\delta\xi = -r$ with GMRES, using only matrix-free p
 | `eps_t` | `1e-6` | time step for $\partial_t x$ (period phase condition) |
 | `computeStability` | `False` | run stability analysis after convergence |
 | `stability_method` | `'arnoldi'` | `'arnoldi'` (any solution) or `'evp'` (equilibria and traveling waves, see below) |
-| `Neigen` | `50` | Arnoldi iterations; with `'evp'`, number of eigenvalues returned |
-| `Nsave_modes` | `5` | number of unstable modes written to disk, most unstable first (`None`: all); the eigenvalue files always list all `Neigen` modes |
+| `Neigen` | `50` | Arnoldi iterations (the maximum with `arnoldi_tol`); with `'evp'`, number of eigenvalues returned |
+| `arnoldi_tol` | `None` | Arnoldi: stop once the `arnoldi_nconv` leading modes have relative Ritz residual below this (`None`: always `Neigen` iterations) |
+| `arnoldi_nconv` | `5` | Arnoldi: number of leading modes that must converge (and that `arnoldi_warm_start` keeps) |
+| `stability_guess` | `None` | Arnoldi: list of state vectors close to the wanted modes, used as the start vector (`None`: random) |
+| `arnoldi_warm_start` | `False` | Arnoldi: each analysis keeps its `arnoldi_nconv` leading modes as `stability_guess` for the next one (continuation) |
+| `Nsave_modes` | `5` | number of unstable modes written to disk, most unstable first (`None`: all); the eigenvalue files list all the modes computed |
 | `evp_target` | `0.0` | with `'evp'`: the sparse eigenvalue search returns eigenvalues nearest this value (keep 0, see below) |
 | `projectNeutralDrift` | `False` | Arnoldi: project neutral (shift / time) directions out of the analysis; EVP: drop the modes that are neutral shifts of the base state and return `Neigen` other modes |
 | `save_ecs_history` | `False` | keep the iterate of every Newton step (`solution_iter_<i>`) instead of overwriting `solution` |
@@ -158,6 +162,21 @@ With `computeStability=True`, a converged solution is analysed automatically (or
 ### Arnoldi (`'arnoldi'`, default)
 
 Arnoldi iteration on the linearised flow map gives the Floquet multipliers $\mu$ and growth rates $\lambda = \ln(\mu)/T$. It works for every solution type (it is the only option for periodic and relative periodic orbits), is matrix-free and runs in parallel. It only resolves the leading multipliers well. When many modes decay very slowly (e.g. salinity with small $\tau/Pe$), their multipliers cluster near 1 and `Neigen` Arnoldi vectors may not resolve them: check `residual.mtx`, or cross-check with the EVP.
+
+**Progress file.** After every Arnoldi iteration, rank 0 adds a row to `stability/arnoldi_history.csv`: the step, then for each of the `arnoldi_nconv` leading modes its growth rate (`lambda_real_i`, `lambda_imag_i`) and relative Ritz residual (`residual_i`). It can be read during a long run to follow convergence, and keeps the latest estimates if the job is stopped before the final `.mtx` files are written. It is not enough to restart Arnoldi, which would also need the basis.
+
+**Fewer Arnoldi iterations.** With `arnoldi_tol` (e.g. `1e-6`), Arnoldi checks after each iteration the Ritz residuals $|h_{k+1,k}\,y_k|/|\mu|$ of the `arnoldi_nconv` leading modes and stops once they are all below the tolerance, so `Neigen` is only the maximum. The finite-difference Jacobian limits the residual to roughly `eps_x`, so a tolerance much below about `1e-8` is never reached. A start vector close to the wanted modes saves more iterations: give the modes in `stability_guess`, or set `arnoldi_warm_start=True` in a continuation so that each point starts from the modes of the previous one. The saving depends on how accurate the guess is. Arnoldi still has to reduce the remaining error to `arnoldi_tol`, so a guess accurate to $10^{-4}$ with a tolerance of $10^{-8}$ saves roughly half the iterations, and a guess accurate to only $10^{-2}$ saves much less. A small random part ($10^{-4}$) is added to the guess so that modes missing from it can still appear. Keep `arnoldi_nconv` above the number of unstable modes, so that weakly stable modes that may become unstable are in the guess. Modes from a coarser grid can be used after interpolation:
+
+```python
+from tools import change_grid
+coarse = SaltFinger(params, sizes=(32, 16, 32), bounds=bounds, build=False)
+fine = SaltFinger(params, sizes=model.sizes, bounds=bounds, build=False)  # change_grid writes into it
+guess = []
+for i in range(3):                        # unstable_mode_<i> of a coarse stability analysis
+    coarse.load_state(f'coarse/stability/unstable_mode_{i}')
+    guess.append(change_grid(coarse, fine))
+nsolver.stability_guess = guess
+```
 
 **Memory under MPI.** The Krylov bases of GMRES (`krylov_dim + 1` vectors) and Arnoldi (`Neigen + 1` vectors) are stored on rank 0 only, which also does the orthogonalisation, the hookstep and the small eigenvalue problem. For each Jacobian- or DG-vector product, rank 0 broadcasts the vector, every rank runs the time stepper on it, and the result comes back. Decisions that change the control flow (GMRES stopping, trust-region shrinking, a closed Krylov subspace) are taken on rank 0 and broadcast. The Arnoldi start vector is drawn on rank 0 (`np.random.seed` reproduces it) and broadcast, so every rank perturbs with the same vector. Only the Ritz vectors of the saved modes (`Nsave_modes`) are formed. The basis therefore costs $8 N (k+1)$ bytes on rank 0 and nothing on the other ranks, whatever their number; $N$ is the length of the state vector (e.g. $N = 5 \cdot 128 \cdot 64 \cdot 48 \approx 2\times10^6$ gives 1.6 GB for `Neigen = 100`). Newton and continuation still keep a few full state vectors (the current iterate, residual and map, the branch history) on every rank.
 

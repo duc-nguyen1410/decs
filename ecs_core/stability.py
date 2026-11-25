@@ -47,11 +47,13 @@ def neutral_basis(solver, x_base):
     return basis
 
 
-def arnoldi(matvec, r, n, project=None, comm=None):
+def arnoldi(matvec, r, n, project=None, comm=None, converged=None):
     """n Arnoldi steps on matvec from start vector r (MGS). If project is given,
     it is applied to the start vector and to each operator input and output.
     Returns (Q, H) with Q (len(r), n+1), H (n+1, n); stops early if the
     Krylov subspace closes (remaining columns stay zero).
+    converged(H, k), called on rank 0 after step k with the (k+1, k) Hessenberg matrix, stops
+    the iteration when it returns True; Q and H are then cut to (len(r), k+1) and (k+1, k).
     MPI (comm): r is only read on rank 0, Q and H are None on the other ranks; matvec and
     project are called on every rank with the vector broadcast from rank 0."""
     root = is_root(comm)
@@ -68,7 +70,7 @@ def arnoldi(matvec, r, n, project=None, comm=None):
             v = project(matvec(project(q_in)))
         else:
             v = matvec(q_in)
-        closed = False
+        closed = stop = False
         if root:
             for j in range(k):
                 H[j, k-1] = np.vdot(Q[:, j], v)
@@ -79,9 +81,47 @@ def arnoldi(matvec, r, n, project=None, comm=None):
                 closed = True
             else:
                 Q[:, k] = v/H[k, k-1]
-        if bcast_value(comm, closed):
+                stop = converged is not None and converged(H[:k+1, :k], k)
+        closed, stop = bcast_value(comm, (closed, stop))
+        if closed:
+            break
+        if stop:
+            if root:
+                Q, H = Q[:, :k+1], H[:k+1, :k]
             break
     return Q, H
+
+
+def ritz(H_, Tp):
+    """Ritz values of the (k+1, k) Hessenberg matrix H_, most unstable first: (growthrate,
+    eigenvalues, residuals |h_{k+1,k} y_k|, eigenvectors of H_[:k] as columns)."""
+    eigenvalues, Y = scipy.linalg.eig(H_[0:-1, :])
+    with np.errstate(divide='ignore'):
+        growthrate = np.log(eigenvalues)/Tp
+    res = np.abs(H_[-1, :] @ Y)
+    idx = np.argsort(growthrate.real)[::-1]
+    return growthrate[idx], eigenvalues[idx], res[idx], Y[:, idx]
+
+
+def start_vector(n, guess=None, noise=1e-4):
+    """Arnoldi start vector of length n: random, or, with guess (state vectors close to the
+    wanted modes, real or complex), a random combination of their real and imaginary parts
+    plus `noise` (relative) of the random vector, so that modes missing from the guess are
+    still found. The random vector is drawn first in both cases (np.random.seed reproduces it)."""
+    r = np.random.rand(n)
+    if guess is None or len(guess) == 0:
+        return r
+    g = np.zeros(n)
+    for v in guess:
+        v = np.asarray(v)
+        if v.size != n:
+            raise ValueError(f"stability_guess: vector of length {v.size}, the state has {n} "
+                             "(interpolate modes from another grid with tools.change_grid)")
+        for part in (v.real, v.imag):
+            norm = np.linalg.norm(part)
+            if norm > 0:
+                g += np.random.uniform(0.5, 1.0)*part/norm
+    return g/np.linalg.norm(g) + noise*r/np.linalg.norm(r)
 
 
 def modes_to_save(growthrate, nsave=None):
@@ -172,17 +212,40 @@ def _stability_arnoldi(solver, xi):
     apply_DG = lambda v: solver.return_map_derivative(x0, v, phi_base, Tp, ax, ay, az)
     # start vector drawn on rank 0 only (numpy's global generator, so np.random.seed
     # reproduces it) and broadcast by arnoldi: every rank perturbs with the same vector
-    r = np.random.rand(solver.model.size()) if root else None
-    Q, H_ = arnoldi(apply_DG, r, solver.Neigen, project, comm)
+    r = start_vector(solver.model.size(), solver.stability_guess) if root else None
+    if solver.stability_guess is not None:
+        logger.info(f"Arnoldi start from {len(solver.stability_guess)} guess mode(s)")
+
+    # after every step (rank 0): one row of stability/arnoldi_history.csv with the growth rate and
+    # relative Ritz residual of the nconv leading modes, then the arnoldi_tol test
+    nconv = solver.arnoldi_nconv
+    history = os.path.join(solver.odir, 'stability', 'arnoldi_history.csv')
+    if root:
+        os.makedirs(os.path.dirname(history), exist_ok=True)
+        with open(history, 'w') as f:
+            f.write('step,' + ','.join(f'lambda_real_{i},lambda_imag_{i},residual_{i}'
+                                       for i in range(nconv)) + '\n')
+
+    def converged(H_k, k):
+        lam, mu, res_k, _ = ritz(H_k, Tp)
+        rel = res_k[:nconv]/np.abs(mu[:nconv])     # relative Ritz residuals of the leading modes
+        cells = [f'{lam[i].real:.10e},{lam[i].imag:.10e},{rel[i]:.3e}' for i in range(rel.size)]
+        cells += [',,']*(nconv - rel.size)          # fewer modes than nconv in the first steps
+        with open(history, 'a') as f:
+            f.write(f'{k},' + ','.join(cells) + '\n')
+        if solver.arnoldi_tol is None or k < nconv:
+            return False
+        logger.info(f"Arnoldi step {k}: max relative residual of the {nconv} leading modes {rel.max():.2e}")
+        return rel.max() < solver.arnoldi_tol
+
+    Q, H_ = arnoldi(apply_DG, r, solver.Neigen, project, comm, converged)
 
     eigvecs_H, summary = None, None
     if root:
-        eigenvalues, eigvecs_H = scipy.linalg.eig(H_[0:-1, :])
-        growthrate = np.log(eigenvalues)/Tp
-        res = np.abs(H_[-1, :] @ eigvecs_H)  # Ritz residuals |h_{m+1,m} y_m|
-        idx = np.argsort(growthrate.real)[::-1]  # most unstable first
-        eigvecs_H = eigvecs_H[:, idx]
-        summary = (growthrate[idx], eigenvalues[idx], res[idx])
+        growthrate, eigenvalues, res, eigvecs_H = ritz(H_, Tp)  # residuals |h_{m+1,m} y_m|
+        summary = (growthrate, eigenvalues, res)
+        if H_.shape[1] < solver.Neigen:
+            logger.info(f"Arnoldi converged after {H_.shape[1]} of at most {solver.Neigen} iterations")
     growthrate, eigenvalues, res = bcast_value(comm, summary)
 
     def ritz_vectors(cols):
@@ -192,6 +255,9 @@ def _stability_arnoldi(solver, xi):
             # real and imaginary parts separately: no complex copy of the whole basis
             modes = np.matmul(Q[:, 0:-1], Y.real) + 1j*np.matmul(Q[:, 0:-1], Y.imag)
         return bcast_array(comm, modes)
+
+    if solver.arnoldi_warm_start:   # leading modes: start of the next analysis (continuation)
+        solver.stability_guess = list(ritz_vectors(range(min(nconv, len(growthrate)))).T)
 
     return growthrate, eigenvalues, ritz_vectors, res
 

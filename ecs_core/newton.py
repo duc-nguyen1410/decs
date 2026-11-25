@@ -70,7 +70,15 @@ class ECSSolver:
         # stability
         self.computeStability = p.get('computeStability', False)
         self.projectNeutralDrift = p.get('projectNeutralDrift', False)
-        self.Neigen = p.get('Neigen', 50)
+        self.Neigen = p.get('Neigen', 50)  # Arnoldi: maximum number of iterations
+        # Arnoldi: stop once the arnoldi_nconv leading modes have relative Ritz residual below
+        # arnoldi_tol (None: always run Neigen iterations)
+        self.arnoldi_tol = p.get('arnoldi_tol', None)
+        self.arnoldi_nconv = p.get('arnoldi_nconv', 5)
+        # Arnoldi start: state vectors close to the wanted modes (None: random start); with
+        # arnoldi_warm_start, each analysis stores its arnoldi_nconv leading modes here for the next
+        self.stability_guess = p.get('stability_guess', None)
+        self.arnoldi_warm_start = p.get('arnoldi_warm_start', False)
         self.Nsave_modes = p.get('Nsave_modes', 5)  # save only the N most unstable modes (None: all)
         self.stability_method = p.get('stability_method', 'arnoldi')  # 'arnoldi' or 'evp'
         self.evp_target = p.get('evp_target', 0.0)  # sparse EVP: eigenvalues nearest this
