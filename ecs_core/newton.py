@@ -190,10 +190,11 @@ class ECSSolver:
         """Hookstep-GMRES Newton step from xi.
         Returns (dxi, linear-model error, next trust radius, (residual, G) at xi + dxi)."""
         logger.info("Starting GMRES ...")
+        comm = self.comm
         matvec = self._jacobian(xi, phi_base)
         Q, H, k, beta, w, res_sq = krylov.gmres_hookstep(
             matvec, residual, self.krylov_dim, self.trust_radius,
-            kmin=self.krylov_dim_min, min_error=self.gmres_min_error)
+            kmin=self.krylov_dim_min, min_error=self.gmres_min_error, comm=comm)
 
         def evaluate(dx):
             res_trial, phi_trial = self._evaluate(xi + dx)
@@ -201,7 +202,13 @@ class ECSSolver:
 
         return krylov.trust_region_step(
             Q, H, k, beta, w, res_sq, self.trust_radius, np.linalg.norm(residual), evaluate,
-            self.trust_radius_min, self.trust_radius_max)
+            self.trust_radius_min, self.trust_radius_max, comm=comm)
+
+    @property
+    def comm(self):
+        """MPI communicator of the model (None for a model without one). The Krylov bases of
+        GMRES and Arnoldi live on its rank 0 only (see krylov.py)."""
+        return getattr(self.model, 'comm', None)
 
     def solve(self, x0, Tsearch=False, Rxsearch=False, Rysearch=False, Rzsearch=False,
                      Tp=20.0, ax=0.0, ay=0.0, az=0.0):

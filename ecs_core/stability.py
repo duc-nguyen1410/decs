@@ -1,6 +1,11 @@
 """
 Linear (Floquet) stability of a converged solution: Arnoldi iteration on the
 linearised flow map DG, optionally with the neutral (drift) directions projected out.
+
+MPI: as in GMRES (krylov.py), the Arnoldi basis Q, the Hessenberg matrix and the Ritz
+vectors exist on rank 0 only; every rank runs the time stepper on the vector broadcast
+from rank 0, so all ranks apply DG to the same vector. Only the Ritz vectors of the modes
+that are saved are formed (Nsave_modes of them), not all Neigen.
 """
 import os
 import logging
@@ -9,6 +14,7 @@ import scipy.io
 import scipy.linalg
 from physics.symmetry import Symmetry
 from physics.base import EVPTooLargeError
+from .krylov import is_root, bcast_value, bcast_array
 
 logger = logging.getLogger(__name__)
 
@@ -41,30 +47,40 @@ def neutral_basis(solver, x_base):
     return basis
 
 
-def arnoldi(matvec, r, n, project=None):
+def arnoldi(matvec, r, n, project=None, comm=None):
     """n Arnoldi steps on matvec from start vector r (MGS). If project is given,
     it is applied to the start vector and to each operator input and output.
     Returns (Q, H) with Q (len(r), n+1), H (n+1, n); stops early if the
-    Krylov subspace closes (remaining columns stay zero)."""
-    if project is not None:
-        r = project(r)
-    Q = np.zeros((r.size, n+1))
-    H = np.zeros((n+1, n))
-    Q[:, 0] = r/np.linalg.norm(r)
+    Krylov subspace closes (remaining columns stay zero).
+    MPI (comm): r is only read on rank 0, Q and H are None on the other ranks; matvec and
+    project are called on every rank with the vector broadcast from rank 0."""
+    root = is_root(comm)
+    Q = H = None
+    if root:
+        if project is not None:
+            r = project(r)
+        Q = np.zeros((r.size, n+1))
+        H = np.zeros((n+1, n))
+        Q[:, 0] = r/np.linalg.norm(r)
     for k in range(1, n+1):
-        q_in = Q[:, k-1]
+        q_in = bcast_array(comm, Q[:, k-1] if root else None)
         if project is not None:
             v = project(matvec(project(q_in)))
         else:
             v = matvec(q_in)
-        for j in range(k):
-            H[j, k-1] = np.vdot(Q[:, j], v)
-            v = v - H[j, k-1]*Q[:, j]
-        H[k, k-1] = np.linalg.norm(v)
-        if H[k, k-1] < 1e-12:
-            logger.info(f"Arnoldi Krylov subspace closed at step {k}")
+        closed = False
+        if root:
+            for j in range(k):
+                H[j, k-1] = np.vdot(Q[:, j], v)
+                v = v - H[j, k-1]*Q[:, j]
+            H[k, k-1] = np.linalg.norm(v)
+            if H[k, k-1] < 1e-12:
+                logger.info(f"Arnoldi Krylov subspace closed at step {k}")
+                closed = True
+            else:
+                Q[:, k] = v/H[k, k-1]
+        if bcast_value(comm, closed):
             break
-        Q[:, k] = v/H[k, k-1]
     return Q, H
 
 
@@ -118,7 +134,10 @@ def stability(solver, xi, residual_tol=1e-6):
         if unstable.size > 0:
             keep = modes_to_save(growthrate, solver.Nsave_modes)
             logger.info(f"There are {unstable.size} unstable modes; saving {keep.size}.")
-            modes = comm.bcast(eigenvectors[:, keep] if comm.rank == 0 else None, root=0)
+            if callable(eigenvectors):      # Arnoldi: Ritz vectors formed on rank 0 on demand
+                modes = eigenvectors(keep)
+            else:
+                modes = comm.bcast(eigenvectors[:, keep] if comm.rank == 0 else None, root=0)
             for i, mode in enumerate(modes.T):
                 model.save_state(filename=os.path.join(out_dir, f'unstable_mode_{i}'),
                                  state_vector=mode.real)
@@ -131,7 +150,13 @@ def stability(solver, xi, residual_tol=1e-6):
 
 
 def _stability_arnoldi(solver, xi):
-    """Arnoldi on the linearised flow map DG: Ritz values are the Floquet multipliers."""
+    """Arnoldi on the linearised flow map DG: Ritz values are the Floquet multipliers.
+    Returns (growthrate, eigenvalues, ritz_vectors, res), most unstable first, on every rank.
+    ritz_vectors(cols) is collective and returns the Ritz vectors of those columns (complex,
+    shape (N, len(cols))) on every rank: they are formed on rank 0 from its Arnoldi basis,
+    only for the modes asked for."""
+    comm = solver.comm
+    root = is_root(comm)
     x0, Tp, ax, ay, az = solver.unpack_xi(xi)
     phi_base = solver.return_map(x0, Tp, ax, ay, az)
     project = None
@@ -145,14 +170,30 @@ def _stability_arnoldi(solver, xi):
             return v
 
     apply_DG = lambda v: solver.return_map_derivative(x0, v, phi_base, Tp, ax, ay, az)
-    Q, H_ = arnoldi(apply_DG, np.random.rand(solver.model.size()), solver.Neigen, project)
+    # start vector drawn on rank 0 only (numpy's global generator, so np.random.seed
+    # reproduces it) and broadcast by arnoldi: every rank perturbs with the same vector
+    r = np.random.rand(solver.model.size()) if root else None
+    Q, H_ = arnoldi(apply_DG, r, solver.Neigen, project, comm)
 
-    eigenvalues, eigvecs_H = scipy.linalg.eig(H_[0:-1, :])
-    eigenvectors = np.matmul(Q[:, 0:-1], eigvecs_H)
-    growthrate = np.log(eigenvalues)/Tp
-    res = np.abs(H_[-1, :] @ eigvecs_H)  # Ritz residuals |h_{m+1,m} y_m|
-    idx = np.argsort(growthrate.real)[::-1]  # most unstable first
-    return growthrate[idx], eigenvalues[idx], eigenvectors[:, idx], res[idx]
+    eigvecs_H, summary = None, None
+    if root:
+        eigenvalues, eigvecs_H = scipy.linalg.eig(H_[0:-1, :])
+        growthrate = np.log(eigenvalues)/Tp
+        res = np.abs(H_[-1, :] @ eigvecs_H)  # Ritz residuals |h_{m+1,m} y_m|
+        idx = np.argsort(growthrate.real)[::-1]  # most unstable first
+        eigvecs_H = eigvecs_H[:, idx]
+        summary = (growthrate[idx], eigenvalues[idx], res[idx])
+    growthrate, eigenvalues, res = bcast_value(comm, summary)
+
+    def ritz_vectors(cols):
+        modes = None
+        if root:
+            Y = eigvecs_H[:, np.asarray(cols, dtype=int)]
+            # real and imaginary parts separately: no complex copy of the whole basis
+            modes = np.matmul(Q[:, 0:-1], Y.real) + 1j*np.matmul(Q[:, 0:-1], Y.imag)
+        return bcast_array(comm, modes)
+
+    return growthrate, eigenvalues, ritz_vectors, res
 
 
 def _stability_evp(solver, xi):
