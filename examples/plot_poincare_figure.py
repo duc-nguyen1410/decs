@@ -23,7 +23,6 @@ from tools import PoincareSection, recurrence_search, shifted_distance
 Tp = 0.07380265343504276
 model = SaltFinger(params={'Ra': 1e5, 'Pr': 7.0, 'tau': 0.01, 'Rrho': 40.0, 'init_dt': 1e-4, 'ext': '.nc'},
                    sizes=(128, 128), bounds=(0.8, 1.0))
-model.build_problems()
 model.use_CFL = False
 model.load_state('Lx0.8_RPO2/solution')
 x0 = model.get_state()

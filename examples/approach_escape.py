@@ -37,7 +37,6 @@ odir = 'test_approach_escape/'
 
 params = {'Ra': 1e5, 'Pr': 7.0, 'tau': 0.01, 'Rrho': 40.0, 'init_dt': 2e-4, 'ext': '.nc'}
 model = SaltFinger(params=params, sizes=(128, 128), bounds=(0.6, 1.0))
-model.build_problems()
 model.use_CFL = True
 model.load_state(eq_dir + '/solution')
 x_eq = model.get_state()

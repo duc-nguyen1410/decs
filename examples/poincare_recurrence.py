@@ -26,7 +26,6 @@ params = {'Ra': 1e5, 'Pr': 7.0, 'tau': 0.01, 'Rrho': 40.0,
           'init_dt': 1e-4,
           'ext': '.nc'}
 model = SaltFinger(params=params, sizes=sizes, bounds=bounds)
-model.build_problems()
 model.use_CFL = False
 model.load_state('Lx0.8_RPO2/solution')
 x0 = model.get_state()

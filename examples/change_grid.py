@@ -14,11 +14,11 @@ from tools import change_grid
 params = {'Ra': 1e5, 'Pr': 7.0, 'tau': 0.01, 'Rrho': 40.0, 'ext': '.nc'}
 
 # old state: grid and domain it was computed on
-model_old = SaltFinger(params=params, sizes=(128, 128), bounds=(0.6, 1.0))
+model_old = SaltFinger(params=params, sizes=(128, 128), bounds=(0.6, 1.0), build=False)
 model_old.load_state('Lx0.6_WF/solution')
 
 # new grid and domain: (Nx, Nz) / (Lx, Lz), or (Nx, Ny, Nz) / (Lx, Ly, Lz) to extend to 3-D
-model_new = SaltFinger(params=params, sizes=(48, 48), bounds=(0.6, 1.0))
+model_new = SaltFinger(params=params, sizes=(48, 48), bounds=(0.6, 1.0), build=False)
 
 x_new = change_grid(model_old, model_new)
 model_new.save_state('WF_Lx0.6_48x48', x_new)

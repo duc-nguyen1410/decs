@@ -29,7 +29,6 @@ params = {'Pe': 10.0, 'Ri': 20.0, 'Pr': 10.0, 'Lambda': 2.0, 'tau': 0.01,
           'init_dt': 1e-3,
           'ext': '.nc'}
 model = ThermohalineShear(params=params, sizes=sizes, bounds=bounds)
-model.build_problems()
 model.use_CFL = False # fixed time steps: CFL can lose stability in long runs (see physics/base.py)
 
 # 1. turbulent state at Ri = 30 by hysteresis from Ri = 20

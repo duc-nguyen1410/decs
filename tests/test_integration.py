@@ -12,7 +12,6 @@ T = 0.004            # 20 steps of init_dt
 
 def make_model(**overrides):
     model = SaltFinger({**PARAMS, **overrides}, sizes=(32, 32), bounds=(0.6, 1.0))
-    model.build_problems()
     return model
 
 
@@ -154,14 +153,14 @@ def test_change_grid_round_trip_and_values(model, states):
     finer grid it equals the old state at the shared grid points."""
     from tools import change_grid
     x = model.flow_map(states[0], T)                   # smooth state
-    fine = SaltFinger(PARAMS, sizes=(64, 48), bounds=(0.6, 1.0))
+    fine = SaltFinger(PARAMS, sizes=(64, 48), bounds=(0.6, 1.0), build=False)
     x_fine = change_grid(model, fine)
     blocks, blocks_fine = x.reshape(-1, 32, 32), x_fine.reshape(-1, 64, 48)
     assert np.allclose(blocks_fine[:, ::2, ::3][:, :, :16], blocks[:, :, ::2][:, :, :16],
                        rtol=0, atol=1e-10*np.abs(x).max())
     back = change_grid(fine, model)
     assert np.linalg.norm(back - x) < 1e-12*np.linalg.norm(x)
-    stretched = SaltFinger(PARAMS, sizes=(32, 32), bounds=(0.8, 1.0))   # new Lx: same grid values
+    stretched = SaltFinger(PARAMS, sizes=(32, 32), bounds=(0.8, 1.0), build=False)   # new Lx: same grid values
     assert np.linalg.norm(change_grid(model, stretched) - x) < 1e-13*np.linalg.norm(x)
 
 
@@ -169,7 +168,7 @@ def test_change_grid_2d_to_3d(model, states):
     """A 2-D state on a 3-D grid is y-independent with v = 0."""
     from tools import change_grid
     x = model.flow_map(states[0], T)
-    model3 = SaltFinger(PARAMS, sizes=(32, 4, 32), bounds=(0.6, 0.3, 1.0))
+    model3 = SaltFinger(PARAMS, sizes=(32, 4, 32), bounds=(0.6, 0.3, 1.0), build=False)
     x3 = change_grid(model, model3)
     u, rest = x3[:3*32*4*32].reshape(3, 32, 4, 32), x3[3*32*4*32:].reshape(-1, 32, 4, 32)
     u2, rest2 = x[:2*32*32].reshape(2, 32, 32), x[2*32*32:].reshape(-1, 32, 32)

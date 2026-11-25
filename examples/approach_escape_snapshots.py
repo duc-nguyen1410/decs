@@ -26,7 +26,7 @@ t_window = (99.0, 104.0)             # snapshots to analyse (a pass near the equ
 windows = {'approach': (100.3, 100.9), 'escape': (101.9, 102.2)}   # fit windows (set by eye)
 odir = 'test_approach_escape_snapshots/'
 
-model = SaltFinger({'Ra': 1e5, 'Pr': 7.0, 'tau': 0.01, 'Rrho': 40.0}, sizes=(128, 128), bounds=(0.6, 1.0))
+model = SaltFinger({'Ra': 1e5, 'Pr': 7.0, 'tau': 0.01, 'Rrho': 40.0}, sizes=(128, 128), bounds=(0.6, 1.0), build=False)
 model.load_state(eq_dir + '/solution')
 x_eq = model.get_state()
 lam = scipy.io.mmread(eq_dir + '/stability/growthrate.mtx').ravel()

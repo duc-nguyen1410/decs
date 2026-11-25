@@ -37,7 +37,6 @@ from tools import PoincareSection, recurrence_search, shifted_distance
 
 params = {'Ra': 1e5, 'Pr': 7.0, 'tau': 0.01, 'Rrho': 40.0, 'init_dt': 1e-4, 'ext': '.nc'}
 model = SaltFinger(params=params, sizes=(128, 128), bounds=(0.8, 1.0))
-model.build_problems()
 ```
 
 - **Resolution.** Use the resolution you will converge at. Recurrences found at a coarser resolution are fine as rough guesses, but then interpolate and reconverge.

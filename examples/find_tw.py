@@ -17,7 +17,6 @@ params = {'Ra': 1e5, 'Pr': 7.0, 'tau': 0.01, 'Rrho': 40.0,
           'init_dt': 2e-4,
           'ext': '.nc'}
 model = SaltFinger(params=params, sizes=sizes, bounds=bounds)
-model.build_problems()
 
 nsolver_params = {'max_iter': 20, 
                   'tol': 1e-9, 

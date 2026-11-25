@@ -30,9 +30,23 @@ def available_memory():
         return float('inf')
 
 
-class FluidModel(StateIO, SymmetryOps):
+class _BuildOnInit(type):
+    """Calls build_problems() once the whole constructor chain has run (subclasses create
+    their domain and fields after FluidModel.__init__). Model(..., build=False) skips it,
+    for models used only to load, regrid or compare states."""
+    def __call__(cls, *args, build=True, **kwargs):
+        model = super().__call__(*args, **kwargs)
+        if build:
+            model.build_problems()
+        return model
+
+
+class FluidModel(StateIO, SymmetryOps, metaclass=_BuildOnInit):
     def __init__(self, params, sizes, bounds, bounded=False, mode='ecs', dealias=3/2, comm=None):
         """
+        The problems are built on construction (build_problems); pass build=False to skip that
+        when the model only loads, regrids or compares states.
+
         :param float sizes: Grid mesh of domain (Nx, Nz) or (Nx, Ny, Nz)
         :param float bounds: Domain size (Lx, Lz) or (Lx, Ly, Lz)
         :param bool bounded: Is this a domain bounded in vertical (z) direction? If yes, model will use Chebyshev grid instead of Fourier mode
@@ -422,7 +436,6 @@ class FluidModel(StateIO, SymmetryOps):
         if self._evp_serial is None or self._evp_serial[0] != key:
             copy = type(self)(dict(self.params), self.sizes, self.bounds, self.bounded, self.mode,
                               self.dealias, comm=MPI.COMM_SELF)
-            copy.build_problems()
             self._evp_serial = (key, copy)
         return self._evp_serial[1]
 

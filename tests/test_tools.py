@@ -16,7 +16,6 @@ N = 32
 @pytest.fixture(scope='module')
 def model():
     m = SaltFinger(PARAMS, sizes=(N, N), bounds=(0.6, 1.0))
-    m.build_problems()
     return m
 
 

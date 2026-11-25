@@ -21,7 +21,6 @@ def run_cases(solver_cls=ECSSolver, extra_params=None):
     ('<type>_cfl<0|1>') and the sorted Arnoldi multipliers ('<type>_cfl<0|1>_arnoldi')."""
     model = SaltFinger({'Ra': 1e5, 'Pr': 7.0, 'tau': 0.01, 'Rrho': 40.0, 'init_dt': 2e-4, 'ext': '.h5'},
                        sizes=(32, 32), bounds=(0.6, 1.0))
-    model.build_problems()
     x0 = 5e-2*np.random.default_rng(0).standard_normal(model.size())
     x0 = model.flow_map(x0, 0.01)        # smooth the noise a little
 

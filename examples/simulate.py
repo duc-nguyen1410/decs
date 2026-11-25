@@ -33,7 +33,6 @@ SFC = SaltFinger(params=params,
                  sizes=sizes, 
                  bounds=bounds, 
                  mode='sim')
-SFC.build_problems() # Build IVP problem
 solver = SFC.ivp_problem.build_solver(de.RK222)
 
 SFC.set_initial_conditions(mode='random')

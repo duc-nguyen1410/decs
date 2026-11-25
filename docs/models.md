@@ -4,8 +4,7 @@ All models are imported from the `physics` package and share the same constructo
 
 ```python
 from physics import SaltFinger
-model = SaltFinger(params, sizes, bounds, bounded=False, mode='ecs', dealias=3/2)
-model.build_problems()
+model = SaltFinger(params, sizes, bounds, bounded=False, mode='ecs', dealias=3/2, build=True)
 ```
 
 | Argument | Meaning |
@@ -16,6 +15,7 @@ model.build_problems()
 | `bounded` | `False`: Fourier in $z$ (periodic); `True`: Chebyshev in $z$ (walls) |
 | `mode` | `'ecs'`: complex Fourier bases, needed for symmetries and shifts in the ECS solver; `'sim'`: real Fourier bases, more robust for long simulations with CFL |
 | `dealias` | dealiasing factor |
+| `build` | `True` (default): build the problems on construction; `False`: skip that, for a model used only to load, regrid or compare states |
 
 Run options shared by all models (in `params`): `init_dt` (time step, default `2e-4`), `ext` (format of saved states: `'.nc'`, the default and preferred, opens directly in ParaView and post-processes quickly; or `'.h5'`), `odir`, `use_CFL` and the CFL settings `cadence`, `safety`, `threshold`, `min_change`, `max_change`, `max_dt`, and `save_snapshots`, `save_flowproperties`, `save_meanprofiles` (time histories written after a TW / PO / RPO converges).
 
@@ -65,7 +65,6 @@ Flow properties (`model.get_flow_properties()`): fluxes `Ft`, `Fs`, Nusselt and 
 from physics import SaltFinger
 params = {'Ra': 1e5, 'Pr': 7.0, 'tau': 0.01, 'Rrho': 40.0, 'init_dt': 2e-4, 'ext': '.nc'}
 model = SaltFinger(params=params, sizes=(128, 128), bounds=(0.6, 1.0))
-model.build_problems()
 ```
 
 ## Thermohaline-shear instability `ThermohalineShear`
@@ -96,7 +95,6 @@ with the same zero-mean constraints on $\boldsymbol{u}$, $\theta$ and $s$.
 from physics import ThermohalineShear
 params = {'Pe': 100.0, 'Ri': 1.0, 'Pr': 7.0, 'Lambda': 2.0, 'tau': 0.01, 'init_dt': 1e-4}
 model = ThermohalineShear(params=params, sizes=(128, 128), bounds=(1.0, 1.0))
-model.build_problems()
 ```
 
 ## Models not yet validated

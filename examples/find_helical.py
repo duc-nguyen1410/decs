@@ -45,11 +45,10 @@ odir = f"Lx{L}_Rrho{params['Rrho']}_helical_h{handedness:+d}/"
 
 # ---------------------------------------------------------------- model and guess
 model = SaltFinger(params=params, sizes=sizes, bounds=(L, L, 1.0))
-model.build_problems()
 sigma = screw_symmetry(handedness)
 
 if guess == 'from_2d':
-    model_2d = SaltFinger(params=params, sizes=sizes_2d, bounds=(L, 1.0))
+    model_2d = SaltFinger(params=params, sizes=sizes_2d, bounds=(L, 1.0), build=False)
     model_2d.load_state(state_2d)
     x0 = helical_guess(model_2d, model, sigma, scale=guess_scale)
 else:

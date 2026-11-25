@@ -23,7 +23,6 @@ snap_dir = params['odir'] + 'snapshots'
 
 # 1. a simulation writing snapshots, as in simulate.py (4 periods, 25 snapshots per period)
 sim = SaltFinger(params=params, sizes=sizes, bounds=bounds, mode='sim')
-sim.build_problems()
 solver = sim.ivp_problem.build_solver(de.RK222)
 sim.load_state('Lx0.8_RPO2/solution')
 sim.set_cfl(solver)
@@ -33,7 +32,7 @@ while solver.proceed:
     solver.step(sim.CFL.compute_timestep())
 
 # 2. analysis (an 'ecs' model: its symmetry operators assume the complex Fourier basis)
-model = SaltFinger(params=params, sizes=sizes, bounds=bounds)
+model = SaltFinger(params=params, sizes=sizes, bounds=bounds, build=False)
 T, X = load_snapshots(model, snap_dir)
 logger.info(f"{len(T)} snapshots, t = {T[0]:.3f} - {T[-1]:.3f}")
 

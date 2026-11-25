@@ -25,7 +25,6 @@ params = {'Ra': 1e5, 'Pr': 7.0, 'tau': 0.01, 'Rrho': 40.0,
           'init_dt': 3e-4,
           'ext': '.nc'}
 model = SaltFinger(params=params, sizes=sizes, bounds=bounds)
-model.build_problems()
 
 n_segments = 3
 nsolver_params = {'n_segments': n_segments,

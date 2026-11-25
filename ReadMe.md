@@ -81,7 +81,6 @@ from ecs_core import ECSSolver
 
 model = SaltFinger(params={'Ra': 1e5, 'Pr': 7.0, 'tau': 0.01, 'Rrho': 40.0, 'init_dt': 2e-4},
                    sizes=(128, 128), bounds=(0.6, 1.0))
-model.build_problems()
 model.load_state('examples/Lx0.6_WF/solution')       # initial guess
 
 solver = ECSSolver(model, {'tol': 1e-9, 'trust_radius': 20.0, 'odir': 'eq_output/'})

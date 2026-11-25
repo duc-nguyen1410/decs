@@ -29,7 +29,7 @@ Each Newton step solves $J\,\delta\xi = -r$ with GMRES, using only matrix-free p
 
 ## `ECSSolver(model, params)`
 
-`model` is a built model (after `model.build_problems()`). Options in `params`, with defaults:
+`model` is a model built with its problems (the default on construction). Options in `params`, with defaults:
 
 | Key | Default | Meaning |
 |---|---|---|

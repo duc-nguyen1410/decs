@@ -19,7 +19,7 @@ save_centered = False                 # also save the state shifted so the best 
                                       # no shift along its reflected directions
 
 params = {'Ra': 1e5, 'Pr': 7.0, 'tau': 0.01, 'Rrho': 40.0, 'ext': '.nc'}
-model = SaltFinger(params=params, sizes=sizes, bounds=bounds)   # parameters do not matter here
+model = SaltFinger(params=params, sizes=sizes, bounds=bounds, build=False)   # parameters do not matter here
 model.load_state(state_file)
 x = model.get_state()
 

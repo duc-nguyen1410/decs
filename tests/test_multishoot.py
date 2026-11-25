@@ -14,7 +14,6 @@ REFERENCE = Path(__file__).resolve().parent/'data'/'regression_reference.npz'
 def model():
     m = SaltFinger({'Ra': 1e5, 'Pr': 7.0, 'tau': 0.01, 'Rrho': 40.0, 'init_dt': 2e-4},
                    sizes=(32, 32), bounds=(0.6, 1.0))
-    m.build_problems()
     return m
 
 

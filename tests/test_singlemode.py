@@ -15,7 +15,6 @@ NZ = 32
 @pytest.fixture(scope='module')
 def model():
     m = SingleMode(PARAMS, sizes=(NZ,), bounds=(1.0,), bounded=True)
-    m.build_problems()
     m.use_CFL = False
     return m
 
@@ -92,7 +91,6 @@ def test_set_param_Ra_matches_model_built_at_that_Ra():
     full model: the flow map after set_param equals that of a model built at the new Ra."""
     def build(Ra):
         m = SingleMode(dict(PARAMS, Ra=Ra), sizes=(NZ,), bounds=(1.0,), bounded=True)
-        m.build_problems()
         m.use_CFL = False
         return m
     a, b = build(2.0), build(3.0)

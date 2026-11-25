@@ -34,14 +34,12 @@ def to_saltfinger_state(y, eps, tau, dim=2):
 def saltfinger(eps=EPS, **kw):
     m = SaltFinger({'Ra': 1.0, 'Pr': PR, 'tau': TAU, 'Rrho': 1/((1 + eps)*TAU), 'init_dt': DT},
                    sizes=SIZES, bounds=BOUNDS, **kw)
-    m.build_problems()
     return m
 
 
 def fraser(eps=EPS, **kw):
     m = SaltFingerFraser({'Sc': PR/TAU, 'tau': TAU, 'eps': eps, 'init_dt': TAU*DT},
                          sizes=SIZES, bounds=BOUNDS, **kw)
-    m.build_problems()
     return m
 
 
@@ -105,7 +103,6 @@ def test_evp_growth_rates_scale_with_tau():
 def reduced(model, eps=EPS, dt=TAU*DT, **kw):
     m = SaltFingerFraser({'Sc': PR/TAU, 'tau': TAU, 'eps': eps, 'model': model, 'init_dt': dt},
                          sizes=SIZES, bounds=BOUNDS, **kw)
-    m.build_problems()
     return m
 
 
@@ -123,7 +120,6 @@ def test_lpn_ifsc_match_saltfinger_options(x0, model, flags):
     """'LPN' and 'IFSC' are SaltFinger's temperature_feedback (and stokes) options in other units."""
     sf = SaltFinger({'Ra': 1.0, 'Pr': PR, 'tau': TAU, 'Rrho': 1/((1 + EPS)*TAU), 'init_dt': DT, **flags},
                     sizes=SIZES, bounds=BOUNDS)
-    sf.build_problems()
     xs = sf.flow_map(x0, T)
     xf = reduced(model).flow_map(from_saltfinger_state(x0, EPS, TAU, dim=2), TAU*T)
     assert np.linalg.norm(to_saltfinger_state(xf, EPS, TAU, dim=2) - xs) < 1e-9*np.linalg.norm(xs)
@@ -188,7 +184,6 @@ def test_reduced_evp_growth_rates():
     assert li[0].real > 0 and np.allclose(lm, li, rtol=1e-8)
     sf = SaltFinger({'Ra': 1.0, 'Pr': PR, 'tau': TAU, 'Rrho': 1/((1 + EPS)*TAU), 'temperature_feedback': True},
                     sizes=SIZES, bounds=BOUNDS, mode='ecs')
-    sf.build_problems()
     ls, _ = sf.solve_evp(zero, N=4)
     ll, _ = reduced('LPN', mode='ecs').solve_evp(zero, N=4)
     assert np.allclose(ll, ls/TAU, rtol=1e-8)

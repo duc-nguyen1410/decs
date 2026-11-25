@@ -80,7 +80,6 @@ def model():
     pytest.importorskip("dedalus.public")
     from physics import SaltFinger
     m = SaltFinger(PARAMS, sizes=(16, 16, 16), bounds=(L, L, 1.0))
-    m.build_problems()
     return m
 
 
