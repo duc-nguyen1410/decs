@@ -18,9 +18,6 @@ from .double_diffusion_base import DoubleDiffusion
 
 
 class MyModel(DoubleDiffusion):
-    def build_problems(self):
-        self.build_ivp_problem()
-
     def build_ivp_problem(self):
         tau_p = self.dist.Field(name='tau_p')
         tau_u = self.dist.VectorField(self.coords, name='tau_u')
@@ -76,7 +73,7 @@ class MyFamily(FluidModel):
         self.eq_fields = []                     # base-state fields of an EVP, if any
 ```
 
-Then add `build_problems`, `build_ivp_problem` and `get_flow_properties` in the family class or in subclasses, as in Option 1.
+Then add `build_ivp_problem` and `get_flow_properties` in the family class or in subclasses, as in Option 1.
 
 ## What the solver relies on
 
@@ -84,7 +81,7 @@ Then add `build_problems`, `build_ivp_problem` and `get_flow_properties` in the 
 |---|---|
 | `self.fields` | the state vector: `get_state` / `set_state` flatten these fields in order |
 | `self.fields[0]` must be the velocity | CFL time stepping and the sign changes of reflections |
-| `self.ivp_problem` (built by `build_problems()`) | time integration `flow_map` |
+| `build_ivp_problem()` setting `self.ivp_problem` (called when the model is created) | time integration `flow_map` |
 | `self.bases` with a Fourier first ($x$) basis | shifts and reflections in $x$; $z$ may be Fourier (`bounded=False`) or Chebyshev (`bounded=True`) |
 | `get_flow_properties()` returning a dict of floats | logs and `flow_properties.csv` |
 | parameters as `<name>_param` fields | continuation in that parameter via `set_param` |

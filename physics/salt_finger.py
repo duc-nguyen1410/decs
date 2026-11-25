@@ -11,8 +11,6 @@ from .double_diffusion_base import DoubleDiffusion
 
 
 class SaltFinger(DoubleDiffusion):
-    def build_problems(self):
-        self.build_ivp_problem()
     def build_ivp_problem(self):
         tau_p = self.dist.Field(name='tau_p')
         tau_u = self.dist.VectorField(self.coords, name='tau_u')

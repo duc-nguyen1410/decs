@@ -156,8 +156,6 @@ class MagnetoConvection(FluidModel):
                 self.preview_fig.canvas.flush_events()  
     
 class BoundedQuasiStaticMagnetoConvection(MagnetoConvection):
-    def build_problems(self):
-        self.build_ivp_problem()
     def build_ivp_problem(self):
         tau_p = self.dist.Field(name='tau_p')
         tau_u1 = self.dist.VectorField(self.coords, name='tau_u1', bases=self.bases[:-1])
@@ -560,8 +558,6 @@ class MagnetoConvection_SingleMode(FluidModel):
                 self.preview_fig.canvas.flush_events()  
     
 class BoundedQuasiStaticMagnetoConvection_SingleMode(MagnetoConvection_SingleMode):
-    def build_problems(self):
-        self.build_ivp_problem()
     def build_ivp_problem(self):
         # Tau fields (scalars, no basis)
         tau_p = self.dist.Field(name='tau_p')

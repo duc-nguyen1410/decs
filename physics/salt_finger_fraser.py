@@ -73,9 +73,6 @@ class SaltFingerFraser(DoubleDiffusion):
         """'full', 'LPN', 'IFSC' or 'MIFSC'."""
         return self.params['model']
 
-    def build_problems(self):
-        self.build_ivp_problem()
-
     def _hmean(self, A):
         """Horizontal average: the k_perp = 0 part of A. Written with Integrate, because
         Dedalus (3.0) cannot take dt of an Average (no new_operand) but can of an Integrate."""

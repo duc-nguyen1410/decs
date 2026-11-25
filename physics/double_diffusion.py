@@ -19,8 +19,6 @@ from .double_diffusion_base import DoubleDiffusion
 
 
 class BoundedSaltFinger(DoubleDiffusion):
-    def build_problems(self):
-        self.build_ivp_problem()
     def build_ivp_problem(self):
         tau_p = self.dist.Field(name='tau_p')
         tau_u1 = self.dist.VectorField(self.coords, name='tau_u1', bases=self.bases[:-1])
@@ -282,8 +280,6 @@ class DiffusiveConvection(DoubleDiffusion):
 
 class ShearedDiffusiveConvection(DoubleDiffusion):
     ''' Thermohaline-shear instability in paper Radko (2019) '''
-    def build_problems(self):
-        self.build_ivp_problem()
     def build_ivp_problem(self):
         tau_p = self.dist.Field(name='tau_p')
         tau_u = self.dist.VectorField(self.coords, name='tau_u') # velocity
@@ -444,8 +440,6 @@ class ShearedDiffusiveConvection(DoubleDiffusion):
 
 
 class WallShearedDiffusiveConvection(DoubleDiffusion):
-    def build_problems(self):
-        self.build_ivp_problem()
     def build_ivp_problem(self):
         tau_p = self.dist.Field(name='tau_p')
         tau_u1 = self.dist.VectorField(self.coords, name='tau_u1', bases=self.bases[:-1])

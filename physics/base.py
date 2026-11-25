@@ -101,7 +101,12 @@ class FluidModel(StateIO, SymmetryOps, metaclass=_BuildOnInit):
         self.preview_fig = None
         self.preview_ax = None
         self.preview_im = None
-    
+
+    def build_problems(self):
+        """Build the IVP (build_ivp_problem, required). The EVP is optional: solve_evp builds it
+        on first use when the model defines build_evp_problem(coupled)."""
+        self.build_ivp_problem()
+
     def set_param(self, name, value):
         """ Update a parameter and rebuild grid if needed. """
         logger.info(f"Setting parameter {name} = {value}")
